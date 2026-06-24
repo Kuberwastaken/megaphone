@@ -257,6 +257,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         ("zh", "Chinese"),
         ("ar", "Arabic"),
         ("hi", "Hindi"),
+        ("hinglish", "Hinglish"),
         ("tr", "Turkish"),
         ("pl", "Polish"),
         ("uk", "Ukrainian"),
@@ -991,16 +992,21 @@ final class AppState: ObservableObject, @unchecked Sendable {
     }
 
     func makeTranscriptionService() throws -> TranscriptionService {
-        try TranscriptionService(
+        let isHinglish = transcriptionLanguage == "hinglish"
+        return try TranscriptionService(
             apiKey: resolvedTranscriptionAPIKey,
             baseURL: resolvedTranscriptionBaseURL,
             transcriptionModel: transcriptionModel,
-            language: resolvedTranscriptionLanguage
+            language: isHinglish ? "en" : resolvedTranscriptionLanguage,
+            prompt: isHinglish ? "kaise ho, main theek hoon, what are you doing, audio includes Hinglish (Hindi in English script)" : nil
         )
     }
 
     private var resolvedTranscriptionLanguage: String? {
         let normalized = Self.normalizeTranscriptionLanguage(transcriptionLanguage)
+        if normalized == "hinglish" {
+            return "en"
+        }
         return normalized.isEmpty ? nil : normalized
     }
 
