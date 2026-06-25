@@ -258,6 +258,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         ("ar", "Arabic"),
         ("hi", "Hindi"),
         ("hinglish", "Hinglish"),
+        ("gu", "Gujarati"),
+        ("gujlish", "Gujlish"),
         ("tr", "Turkish"),
         ("pl", "Polish"),
         ("uk", "Ukrainian"),
@@ -993,18 +995,28 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     func makeTranscriptionService() throws -> TranscriptionService {
         let isHinglish = transcriptionLanguage == "hinglish"
+        let isGujlish = transcriptionLanguage == "gujlish"
+        let isMixedLanguage = isHinglish || isGujlish
+        let customPrompt: String?
+        if isHinglish {
+            customPrompt = "kaise ho, main theek hoon, what are you doing, audio includes Hinglish (Hindi in English script)"
+        } else if isGujlish {
+            customPrompt = "kem cho, hu thik chu, what are you doing, audio includes Gujlish (Gujarati in English script)"
+        } else {
+            customPrompt = nil
+        }
         return try TranscriptionService(
             apiKey: resolvedTranscriptionAPIKey,
             baseURL: resolvedTranscriptionBaseURL,
             transcriptionModel: transcriptionModel,
-            language: isHinglish ? "en" : resolvedTranscriptionLanguage,
-            prompt: isHinglish ? "kaise ho, main theek hoon, what are you doing, audio includes Hinglish (Hindi in English script)" : nil
+            language: isMixedLanguage ? "en" : resolvedTranscriptionLanguage,
+            prompt: customPrompt
         )
     }
 
     private var resolvedTranscriptionLanguage: String? {
         let normalized = Self.normalizeTranscriptionLanguage(transcriptionLanguage)
-        if normalized == "hinglish" {
+        if normalized == "hinglish" || normalized == "gujlish" {
             return "en"
         }
         return normalized.isEmpty ? nil : normalized
