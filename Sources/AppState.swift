@@ -694,7 +694,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let keepDictationInClipboardHistory = UserDefaults.standard.bool(forKey: keepDictationInClipboardHistoryStorageKey)
         let realtimeStreamingEnabled = UserDefaults.standard.bool(forKey: realtimeStreamingEnabledStorageKey)
         let realtimeStreamingModel = UserDefaults.standard.string(forKey: realtimeStreamingModelStorageKey) ?? ""
-        let prefetchTranscriptionEnabled = UserDefaults.standard.bool(forKey: prefetchTranscriptionEnabledStorageKey)
+        let prefetchTranscriptionEnabled = UserDefaults.standard.object(forKey: prefetchTranscriptionEnabledStorageKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: prefetchTranscriptionEnabledStorageKey)
         let dictationAudioInterruptionEnabled = UserDefaults.standard.bool(
             forKey: dictationAudioInterruptionEnabledStorageKey
         )
@@ -2911,7 +2913,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private func startPrefetchTranscriberIfEnabled() {
         guard prefetchTranscriptionEnabled, !realtimeStreamingEnabled else { return }
         guard let service = try? makeTranscriptionService() else { return }
-        let transcriber = PrefetchTranscriber(service: service)
+
+        // Durable transcript file: one chunk appended per 28 s as it completes.
+        // Named by Unix timestamp so recordings don't collide.
+        let ts = Int(Date().timeIntervalSince1970)
+        let saveURL = Self.audioStorageDirectory()
+            .appendingPathComponent("prefetch_transcript_\(ts).txt")
+
+        let transcriber = PrefetchTranscriber(service: service, saveURL: saveURL)
         prefetchTranscriber = transcriber
         audioRecorder.onPCM16Samples = { [weak transcriber] data in
             transcriber?.appendPCM16(data)
