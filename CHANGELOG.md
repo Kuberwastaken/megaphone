@@ -10,6 +10,14 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.0.1] - 2026-07-14
+
+### Fixed
+
+- The DMG installer window now uses Megaphone's dark liquid-glass background instead of the broken FreeFlow artwork with clipped text.
+- The setup welcome card now shows the Megaphone maintainer's GitHub avatar instead of a hardcoded upstream avatar.
+- The API key step in setup is now clearly optional and skippable — transcription is fully on-device, and the key only powers AI cleanup and app context. Megaphone dictates fine without one.
+
 ## [1.0.0] - 2026-07-14
 
 First Megaphone release, forked from FreeFlow 1.1.0.
