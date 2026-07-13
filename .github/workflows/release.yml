@@ -58,7 +58,7 @@ jobs:
             echo
             echo "## Download"
             echo
-            echo "**[Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/download/${{ steps.version.outputs.tag }}/Megaphone.dmg)** — Universal build for all Macs (Apple Silicon + Intel)."
+            echo "**[Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/download/${{ steps.version.outputs.tag }}/Megaphone.dmg)** — requires macOS 26 (Tahoe) on Apple silicon."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
