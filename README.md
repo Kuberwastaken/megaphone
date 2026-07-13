@@ -10,7 +10,7 @@
 
 <p align="center">
   <a href="https://github.com/zachlatta/freeflow/releases/latest/download/FreeFlow.dmg"><b>⬇ Download FreeFlow.dmg</b></a><br>
-  <sub>Works on all Macs (Apple Silicon + Intel)</sub>
+  <sub>Requires macOS 26 (Tahoe) — transcription runs fully on-device</sub>
 </p>
 
 ---
@@ -25,12 +25,12 @@
 
 ## Overview
 
-FreeFlow is a free Mac dictation app inspired by [Wispr Flow](https://wisprflow.ai/), [Superwhisper](https://superwhisper.com/), and [Monologue](https://www.monologue.to/). It gives you fast AI transcription, context-aware cleanup, and voice-driven text editing without a monthly subscription.
+FreeFlow is a free Mac dictation app inspired by [Wispr Flow](https://wisprflow.ai/), [Superwhisper](https://superwhisper.com/), and [Monologue](https://www.monologue.to/). Speech is transcribed entirely on your Mac by Apple's SpeechAnalyzer — your audio never leaves your computer — with optional context-aware LLM cleanup and voice-driven text editing, all without a monthly subscription.
 
 ## Quick Start
 
 1. Download the app from above or [click here](https://github.com/zachlatta/freeflow/releases/latest/download/FreeFlow.dmg)
-2. Get a free Groq API key from [groq.com](https://groq.com/)
+2. Get a free Groq API key from [groq.com](https://groq.com/) — used only for AI cleanup and app context, never for transcription (which is on-device)
 3. Hold `Fn` to talk, or tap `Command-Fn` to start and stop dictation, and have whatever you say pasted into the current text field
 
 ## Features
@@ -38,7 +38,8 @@ FreeFlow is a free Mac dictation app inspired by [Wispr Flow](https://wisprflow.
 - **Custom shortcuts:** Customize both hold-to-talk and toggle dictation shortcuts. If your toggle shortcut extends your hold shortcut, you can start in hold mode and press the extra modifier keys to latch into tap mode without stopping the recording.
 - **Context-aware cleanup:** FreeFlow can read nearby app context so names, terms, and phrases are spelled correctly when you dictate into email, terminals, docs, and other apps.
 - **Custom vocabulary:** Add names, jargon, and project-specific words that FreeFlow should preserve during cleanup.
-- **OpenAI-compatible providers:** Use Groq by default, or configure a custom model and API URL in settings.
+- **On-device transcription:** Speech-to-text runs locally through Apple's SpeechAnalyzer (macOS 26). Audio is analyzed while you speak, so the transcript is ready the moment you stop — no transcription API, key, or network needed.
+- **OpenAI-compatible cleanup providers:** LLM cleanup uses Groq by default, or configure a custom model and API URL in settings.
 
 ## Edit Mode
 
@@ -46,7 +47,7 @@ Edit Mode lets you highlight existing text and transform it with a spoken instru
 
 ## Privacy
 
-There is no FreeFlow server, so FreeFlow does not store or retain your data. The only information that leaves your computer are API calls to your configured transcription and LLM provider.
+There is no FreeFlow server, so FreeFlow does not store or retain your data. Transcription happens entirely on your Mac — recorded audio never leaves your computer. The only information that leaves your computer are the transcript and app-context API calls to your configured LLM provider for cleanup.
 
 ## Custom Cleanup
 
@@ -78,7 +79,7 @@ Then your response would be ONLY the cleaned up text, so here your response is O
 
 ## Using a Local Model
 
-FreeFlow can use OpenAI-compatible local or self-hosted providers instead of Groq. In settings, configure the API base URL and model IDs for your local LLM provider, such as Ollama, LM Studio, or another OpenAI-compatible server. If your transcription backend uses a different endpoint from your LLM backend, set the transcription API URL separately.
+FreeFlow can use OpenAI-compatible local or self-hosted providers instead of Groq for transcript cleanup. In settings, configure the API base URL and model IDs for your local LLM provider, such as Ollama, LM Studio, or another OpenAI-compatible server. (Transcription itself always runs on-device and needs no provider.)
 
 Local models are often slower than hosted providers, especially on cold start, long recordings, or busy hardware.
 
@@ -88,21 +89,18 @@ Local models are often slower than hosted providers, especially on cold start, l
   FreeFlow keeps the default network timeout at 20 seconds, but you can extend it with macOS defaults:
 
 ```bash
-defaults write com.zachlatta.freeflow transcription_timeout_seconds -float 120
 defaults write com.zachlatta.freeflow post_processing_timeout_seconds -float 120
 defaults write com.zachlatta.freeflow context_request_timeout_seconds -float 120
 ```
 
 The timeout keys are:
 
-- `transcription_timeout_seconds`: audio transcription requests
 - `post_processing_timeout_seconds`: transcript cleanup and edit mode requests
 - `context_request_timeout_seconds`: nearby app context requests
 
 Only positive values are used. Remove a custom timeout to return to the 20-second default:
 
 ```bash
-defaults delete com.zachlatta.freeflow transcription_timeout_seconds
 defaults delete com.zachlatta.freeflow post_processing_timeout_seconds
 defaults delete com.zachlatta.freeflow context_request_timeout_seconds
 ```

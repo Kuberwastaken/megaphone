@@ -10,6 +10,12 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 
 ## [Unreleased]
 
+### Changed
+
+- **Transcription now runs entirely on-device** via Apple's SpeechAnalyzer (requires macOS 26). Audio is analyzed while you speak, so the transcript is ready almost instantly when you stop — and recordings never leave your Mac. The cloud transcription stack (transcription provider/model settings, transcription API URL and key, realtime WebSocket streaming, and background HTTP pre-transcription) has been removed; the configured API key is now used only for LLM cleanup and app context.
+- The transcription language picker now lists the languages supported by the on-device speech model, and Settings shows the model's install status with a download button.
+- Custom vocabulary now also biases the on-device speech model directly (via analyzer contextual strings), in addition to guiding LLM cleanup.
+
 ### Added
 
 - The recording start, stop, and error feedback sounds are now configurable in Settings, with a picker and preview button for each event across the full set of built-in macOS alert sounds.
