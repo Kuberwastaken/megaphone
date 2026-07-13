@@ -1,6 +1,7 @@
 import Foundation
 import ApplicationServices
 import AppKit
+import ScreenCaptureKit
 
 struct AppSelectionSnapshot {
     let appName: String?
@@ -115,7 +116,7 @@ Return only two sentences, no labels, no markdown, no extra commentary.
 
         let windowTitle = focusedWindowTitle(from: appElement) ?? appName
         let selectedText = selectedText(from: appElement)
-        let screenshot = captureActiveWindowScreenshot(
+        let screenshot = await captureActiveWindowScreenshot(
             processIdentifier: frontmostApp.processIdentifier,
             appElement: appElement,
             focusedWindowTitle: windowTitle
@@ -422,7 +423,7 @@ Selected text: \(selectedText ?? "None")
         processIdentifier: pid_t,
         appElement: AXUIElement,
         focusedWindowTitle: String?
-    ) -> (dataURL: String?, mimeType: String?, error: String?) {
+    ) async -> (dataURL: String?, mimeType: String?, error: String?) {
         if !CGPreflightScreenCaptureAccess() {
             return (
                 nil,
@@ -492,7 +493,7 @@ Selected text: \(selectedText ?? "None")
                     return lhs.0.layer < rhs.0.layer
                 })
                     .first?.0 {
-                if let dataURL = captureWindowImage(
+                if let dataURL = await captureWindowImage(
                     windowID: activeWindow.id,
                     fileType: .jpeg,
                     mimeType: "image/jpeg",
@@ -526,7 +527,7 @@ Selected text: \(selectedText ?? "None")
                        return lhs.layer < rhs.layer
                    })
                    .first {
-                if let dataURL = captureWindowImage(
+                if let dataURL = await captureWindowImage(
                     windowID: activeWindow.id,
                     fileType: .jpeg,
                     mimeType: "image/jpeg",
@@ -538,12 +539,7 @@ Selected text: \(selectedText ?? "None")
             }
         }
 
-        guard let fullScreenImage = CGWindowListCreateImage(
-            CGRect.infinite,
-            .optionOnScreenOnly,
-            kCGNullWindowID,
-            [.bestResolution]
-        ) else {
+        guard let fullScreenImage = await captureScreenCaptureKitImage(windowID: nil) else {
             return (nil, nil, "Could not capture screenshot from the active window")
         }
 
@@ -561,19 +557,51 @@ Selected text: \(selectedText ?? "None")
         return (nil, nil, "Could not capture screenshot within size limits")
     }
 
+    /// Captures a single window (or the main display when `windowID` is nil)
+    /// via ScreenCaptureKit. `CGWindowListCreateImage` is unavailable when
+    /// targeting macOS 26.
+    private func captureScreenCaptureKitImage(windowID: CGWindowID?) async -> CGImage? {
+        do {
+            let content = try await SCShareableContent.excludingDesktopWindows(
+                false,
+                onScreenWindowsOnly: true
+            )
+            let configuration = SCStreamConfiguration()
+            configuration.showsCursor = false
+            configuration.captureResolution = .best
+            let filter: SCContentFilter
+            if let windowID {
+                guard let window = content.windows.first(where: { $0.windowID == windowID }) else {
+                    return nil
+                }
+                filter = SCContentFilter(desktopIndependentWindow: window)
+                let scale = CGFloat(filter.pointPixelScale)
+                configuration.width = max(Int(window.frame.width * scale), 1)
+                configuration.height = max(Int(window.frame.height * scale), 1)
+            } else {
+                guard let display = content.displays.first else { return nil }
+                filter = SCContentFilter(display: display, excludingWindows: [])
+                let scale = CGFloat(filter.pointPixelScale)
+                configuration.width = max(Int(CGFloat(display.width) * scale), 1)
+                configuration.height = max(Int(CGFloat(display.height) * scale), 1)
+            }
+            return try await SCScreenshotManager.captureImage(
+                contentFilter: filter,
+                configuration: configuration
+            )
+        } catch {
+            return nil
+        }
+    }
+
     private func captureWindowImage(
         windowID: CGWindowID,
         fileType: NSBitmapImageRep.FileType,
         mimeType: String,
         compression: Double? = nil,
         maxDimension: CGFloat? = nil
-    ) -> String? {
-        guard let image = CGWindowListCreateImage(
-            .null,
-            .optionIncludingWindow,
-            windowID,
-            [.bestResolution]
-        ) else {
+    ) async -> String? {
+        guard let image = await captureScreenCaptureKitImage(windowID: windowID) else {
             return nil
         }
 
