@@ -1,6 +1,8 @@
 # Changelog
 
-All notable changes to FreeFlow are documented here.
+All notable changes to Megaphone are documented here. Megaphone is a fork
+of [FreeFlow](https://github.com/zachlatta/freeflow); entries below 1.0.0
+are inherited FreeFlow history.
 
 This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATCH`, where:
 
@@ -8,10 +10,13 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
-## [Unreleased]
+## [1.0.0] - 2026-07-14
+
+First Megaphone release, forked from FreeFlow 1.1.0.
 
 ### Changed
 
+- **Renamed to Megaphone**, with a new liquid-glass monochrome megaphone icon.
 - **Transcription now runs entirely on-device** via Apple's SpeechAnalyzer (requires macOS 26). Audio is analyzed while you speak, so the transcript is ready almost instantly when you stop — and recordings never leave your Mac. The cloud transcription stack (transcription provider/model settings, transcription API URL and key, realtime WebSocket streaming, and background HTTP pre-transcription) has been removed; the configured API key is now used only for LLM cleanup and app context.
 - The transcription language picker now lists the languages supported by the on-device speech model, and Settings shows the model's install status with a download button.
 - Custom vocabulary now also biases the on-device speech model directly (via analyzer contextual strings), in addition to guiding LLM cleanup.
