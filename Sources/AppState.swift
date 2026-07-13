@@ -361,7 +361,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return
             }
             UserDefaults.standard.set(normalized, forKey: transcriptionLanguageStorageKey)
-            speechModelManager.refresh(localePreference: normalized)
+            let manager = speechModelManager
+            Task { @MainActor in
+                manager.refresh(localePreference: normalized)
+            }
         }
     }
 

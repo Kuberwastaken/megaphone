@@ -498,6 +498,10 @@ final class SpeechModelManager: ObservableObject {
 
     private var refreshTask: Task<Void, Never>?
 
+    /// Nonisolated so non-main-actor owners (AppState) can create one; all
+    /// state access still happens on the main actor.
+    nonisolated init() {}
+
     func refresh(localePreference: String) {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
