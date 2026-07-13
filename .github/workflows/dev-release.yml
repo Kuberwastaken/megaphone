@@ -15,6 +15,9 @@ concurrency:
 jobs:
   build-and-release:
     runs-on: macos-latest
+    env:
+      HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 != '' }}
+      HAS_NOTARIZATION: ${{ secrets.APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -45,7 +48,7 @@ jobs:
         run: |
           plutil -replace CFBundleShortVersionString -string "${{ steps.version.outputs.version }}" Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" Info.plist
-          plutil -replace FreeFlowBuildTag -string "${{ steps.version.outputs.build_tag }}" Info.plist
+          plutil -replace MegaphoneBuildTag -string "${{ steps.version.outputs.build_tag }}" Info.plist
 
       - name: Install build tools
         run: brew install create-dmg fileicon
@@ -57,7 +60,12 @@ jobs:
       #   APPLE_ID - Apple ID email for notarization
       #   APPLE_TEAM_ID - 10-character Apple Team ID
       #   APPLE_APP_PASSWORD - app-specific password for notarization
+      - name: Use ad-hoc signing (no Developer ID secrets configured)
+        if: env.HAS_SIGNING != 'true'
+        run: echo 'CODESIGN_IDENTITY=-' >> "$GITHUB_ENV"
+
       - name: Import Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
         env:
           CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
@@ -97,6 +105,7 @@ jobs:
           echo "Found signing identity: $IDENTITY"
 
       - name: Store notarization credentials
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARIZATION == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -116,18 +125,19 @@ jobs:
         run: make dmg ARCH=universal CODESIGN_IDENTITY="$CODESIGN_IDENTITY"
 
       - name: Sign universal DMG
-        run: codesign --force --sign "$CODESIGN_IDENTITY" "build/FreeFlow Dev.dmg"
+        run: codesign --force --sign "$CODESIGN_IDENTITY" "build/Megaphone Dev.dmg"
 
       - name: Notarize universal DMG
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARIZATION == 'true'
         run: |
-          xcrun notarytool submit "build/FreeFlow Dev.dmg" \
+          xcrun notarytool submit "build/Megaphone Dev.dmg" \
             --keychain-profile "notarytool-profile" \
             --keychain "$KEYCHAIN_PATH" \
             --wait
-          xcrun stapler staple "build/FreeFlow Dev.dmg"
+          xcrun stapler staple "build/Megaphone Dev.dmg"
 
       - name: Save universal DMG
-        run: mv "build/FreeFlow Dev.dmg" FreeFlow-Dev.dmg
+        run: mv "build/Megaphone Dev.dmg" Megaphone-Dev.dmg
 
       - name: Move dev tag
         run: |
@@ -139,16 +149,16 @@ jobs:
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: FreeFlow Dev ${{ steps.version.outputs.short_sha }}
+          name: Megaphone Dev ${{ steps.version.outputs.short_sha }}
           body: |
             Development build from `${{ github.sha }}`.
 
-            **[FreeFlow-Dev.dmg](https://github.com/zachlatta/freeflow/releases/download/${{ steps.version.outputs.tag }}/FreeFlow-Dev.dmg)** - Universal dev build for all Macs (Apple Silicon + Intel).
+            **[Megaphone-Dev.dmg](https://github.com/Kuberwastaken/megaphone/releases/download/${{ steps.version.outputs.tag }}/Megaphone-Dev.dmg)** - Universal dev build for all Macs (Apple Silicon + Intel).
           generate_release_notes: false
           make_latest: false
           prerelease: true
           files: |
-            FreeFlow-Dev.dmg
+            Megaphone-Dev.dmg
 
       # --- Cleanup ---
       - name: Cleanup signing artifacts

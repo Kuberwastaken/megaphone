@@ -3,7 +3,7 @@ import Foundation
 import Speech
 import os.log
 
-private let speechLog = OSLog(subsystem: "com.zachlatta.freeflow", category: "SpeechAnalyzer")
+private let speechLog = OSLog(subsystem: "com.kuberwastaken.megaphone", category: "SpeechAnalyzer")
 
 // MARK: - Errors
 
@@ -38,7 +38,7 @@ enum SpeechAnalyzerServiceError: Error, LocalizedError {
 
 // MARK: - Locale resolution
 
-/// Maps FreeFlow's stored language preference onto a locale supported by
+/// Maps Megaphone's stored language preference onto a locale supported by
 /// `SpeechTranscriber`. Handles the legacy values written by earlier
 /// versions ("auto", bare ISO codes like "en"/"hi", and the "hinglish"/
 /// "gujlish" pseudo-codes) as well as full BCP-47 identifiers.
@@ -110,7 +110,7 @@ enum SpeechLocaleResolver {
 // MARK: - Core service
 
 enum SpeechAnalyzerService {
-    /// Splits FreeFlow's free-form vocabulary text into individual terms and
+    /// Splits Megaphone's free-form vocabulary text into individual terms and
     /// wraps them in an `AnalysisContext` so the on-device model is biased
     /// toward the user's names and jargon.
     static func vocabularyContext(from rawVocabulary: String) -> AnalysisContext? {
@@ -148,7 +148,7 @@ enum SpeechAnalyzerService {
 
         let reserved = await AssetInventory.reservedLocales
         if !reserved.contains(where: { $0.identifier(.bcp47) == target }) {
-            // FreeFlow only ever needs one locale; free the slots held for
+            // Megaphone only ever needs one locale; free the slots held for
             // previously used languages so the app's small reservation quota
             // can't fill up after a few language switches.
             for staleLocale in reserved {
@@ -280,7 +280,7 @@ final class SpeechAnalyzerStreamingSession: @unchecked Sendable {
     private let vocabulary: String
 
     /// Serializes all mutable state below and orders sample delivery.
-    private let queue = DispatchQueue(label: "com.zachlatta.freeflow.speechanalyzer-input")
+    private let queue = DispatchQueue(label: "com.kuberwastaken.megaphone.speechanalyzer-input")
     private var pendingSamples: [Data] = []
     private var finished = false
     private var analyzer: SpeechAnalyzer?

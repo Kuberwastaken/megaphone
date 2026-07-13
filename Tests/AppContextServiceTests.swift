@@ -28,14 +28,14 @@ struct AppContextServiceTests {
         Hidden chain of thought should never appear in context.
         It contains misleading details.
         </think>
-        The user is editing a project note in FreeFlow. They likely intend to tighten the release wording.
+        The user is editing a project note in Megaphone. They likely intend to tighten the release wording.
         """
 
         let summary = AppContextService.activitySummary(from: output, model: "qwen/qwen3.6-27b")
 
         expectEqual(
             summary,
-            "The user is editing a project note in FreeFlow. They likely intend to tighten the release wording."
+            "The user is editing a project note in Megaphone. They likely intend to tighten the release wording."
         )
         expect(summary?.contains("Hidden chain of thought") == false, "Qwen reasoning leaked into summary")
     }

@@ -3,11 +3,11 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleName</key>
-    <string>FreeFlow</string>
+    <string>Megaphone</string>
     <key>CFBundleDisplayName</key>
-    <string>FreeFlow</string>
+    <string>Megaphone</string>
     <key>CFBundleIdentifier</key>
-    <string>com.zachlatta.freeflow</string>
+    <string>com.kuberwastaken.megaphone</string>
     <key>CFBundleVersion</key>
     <string>1.1.0</string>
     <key>CFBundleShortVersionString</key>
@@ -15,7 +15,7 @@
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
-    <string>FreeFlow</string>
+    <string>Megaphone</string>
     <key>CFBundleIconFile</key>
     <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
@@ -23,10 +23,10 @@
     <key>LSUIElement</key>
     <true/>
     <key>NSMicrophoneUsageDescription</key>
-    <string>FreeFlow needs microphone access to transcribe your speech.</string>
+    <string>Megaphone needs microphone access to transcribe your speech.</string>
     <key>NSSpeechRecognitionUsageDescription</key>
-    <string>FreeFlow needs speech recognition to convert your voice to text.</string>
+    <string>Megaphone needs speech recognition to convert your voice to text.</string>
     <key>NSAccessibilityUsageDescription</key>
-    <string>FreeFlow needs accessibility access to detect the text cursor position and paste transcribed text.</string>
+    <string>Megaphone needs accessibility access to detect the text cursor position and paste transcribed text.</string>
 </dict>
 </plist>

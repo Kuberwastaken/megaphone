@@ -11,6 +11,9 @@ permissions:
 jobs:
   build-and-release:
     runs-on: macos-latest
+    env:
+      HAS_SIGNING: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 != '' }}
+      HAS_NOTARIZATION: ${{ secrets.APPLE_ID != '' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -43,7 +46,7 @@ jobs:
         run: |
           plutil -replace CFBundleShortVersionString -string "${{ steps.version.outputs.version }}" Info.plist
           plutil -replace CFBundleVersion -string "${{ github.run_number }}" Info.plist
-          plutil -replace FreeFlowBuildTag -string "${{ steps.version.outputs.tag }}" Info.plist
+          plutil -replace MegaphoneBuildTag -string "${{ steps.version.outputs.tag }}" Info.plist
 
       - name: Build release notes from changelog
         id: release_notes
@@ -55,7 +58,7 @@ jobs:
             echo
             echo "## Download"
             echo
-            echo "**[FreeFlow.dmg](https://github.com/zachlatta/freeflow/releases/download/${{ steps.version.outputs.tag }}/FreeFlow.dmg)** — Universal build for all Macs (Apple Silicon + Intel)."
+            echo "**[Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/download/${{ steps.version.outputs.tag }}/Megaphone.dmg)** — Universal build for all Macs (Apple Silicon + Intel)."
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
@@ -69,7 +72,12 @@ jobs:
       #   APPLE_ID — Apple ID email for notarization
       #   APPLE_TEAM_ID — 10-character Apple Team ID
       #   APPLE_APP_PASSWORD — app-specific password for notarization
+      - name: Use ad-hoc signing (no Developer ID secrets configured)
+        if: env.HAS_SIGNING != 'true'
+        run: echo 'CODESIGN_IDENTITY=-' >> "$GITHUB_ENV"
+
       - name: Import Developer ID certificate
+        if: env.HAS_SIGNING == 'true'
         env:
           CERTIFICATE_BASE64: ${{ secrets.DEVELOPER_ID_CERTIFICATE_BASE64 }}
           CERTIFICATE_PASSWORD: ${{ secrets.DEVELOPER_ID_CERTIFICATE_PASSWORD }}
@@ -109,6 +117,7 @@ jobs:
           echo "Found signing identity: $IDENTITY"
 
       - name: Store notarization credentials
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARIZATION == 'true'
         env:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
@@ -122,36 +131,37 @@ jobs:
 
       # --- Build universal ---
       - name: Build universal
-        run: make ARCH=universal APP_NAME=FreeFlow BUNDLE_ID=com.zachlatta.freeflow CODESIGN_IDENTITY="$CODESIGN_IDENTITY"
+        run: make ARCH=universal APP_NAME=Megaphone BUNDLE_ID=com.kuberwastaken.megaphone CODESIGN_IDENTITY="$CODESIGN_IDENTITY"
 
       - name: Create universal DMG
-        run: make dmg ARCH=universal APP_NAME=FreeFlow BUNDLE_ID=com.zachlatta.freeflow CODESIGN_IDENTITY="$CODESIGN_IDENTITY"
+        run: make dmg ARCH=universal APP_NAME=Megaphone BUNDLE_ID=com.kuberwastaken.megaphone CODESIGN_IDENTITY="$CODESIGN_IDENTITY"
 
       - name: Sign universal DMG
-        run: codesign --force --sign "$CODESIGN_IDENTITY" build/FreeFlow.dmg
+        run: codesign --force --sign "$CODESIGN_IDENTITY" build/Megaphone.dmg
 
       - name: Notarize universal DMG
+        if: env.HAS_SIGNING == 'true' && env.HAS_NOTARIZATION == 'true'
         run: |
-          xcrun notarytool submit build/FreeFlow.dmg \
+          xcrun notarytool submit build/Megaphone.dmg \
             --keychain-profile "notarytool-profile" \
             --keychain "$KEYCHAIN_PATH" \
             --wait
-          xcrun stapler staple build/FreeFlow.dmg
+          xcrun stapler staple build/Megaphone.dmg
 
       - name: Save universal DMG
-        run: mv build/FreeFlow.dmg FreeFlow.dmg
+        run: mv build/Megaphone.dmg Megaphone.dmg
 
       # --- Release ---
       - name: Create Release
         uses: softprops/action-gh-release@a06a81a03ee405af7f2048a818ed3f03bbf83c7b # v2.5.0
         with:
           tag_name: ${{ steps.version.outputs.tag }}
-          name: FreeFlow ${{ steps.version.outputs.version }}
+          name: Megaphone ${{ steps.version.outputs.version }}
           body: ${{ steps.release_notes.outputs.body }}
           generate_release_notes: false
           make_latest: true
           files: |
-            FreeFlow.dmg
+            Megaphone.dmg
 
       # --- Cleanup ---
       - name: Cleanup signing artifacts

@@ -3,7 +3,7 @@ import CoreMedia
 import Foundation
 import os.log
 
-private let recordingLog = OSLog(subsystem: "com.zachlatta.freeflow", category: "Recording")
+private let recordingLog = OSLog(subsystem: "com.kuberwastaken.megaphone", category: "Recording")
 
 struct AudioDevice: Identifiable {
     let id: String
@@ -79,8 +79,8 @@ final class AudioRecorder: NSObject, ObservableObject, AVCaptureAudioDataOutputS
     private let _bufferCount = OSAllocatedUnfairLock(initialState: 0)
     private let fileWriteErrorLock = OSAllocatedUnfairLock(initialState: ())
     private var watchdogTimer: DispatchSourceTimer?
-    private let sessionQueue = DispatchQueue(label: "com.zachlatta.freeflow.capture.session")
-    private let sampleBufferQueue = DispatchQueue(label: "com.zachlatta.freeflow.capture.samples")
+    private let sessionQueue = DispatchQueue(label: "com.kuberwastaken.megaphone.capture.session")
+    private let sampleBufferQueue = DispatchQueue(label: "com.kuberwastaken.megaphone.capture.samples")
     private var activeAudioFile: AVAudioFile?
     private var activeAudioFormat: AVAudioFormat?
     private var recordedFrameCount: AVAudioFramePosition = 0
