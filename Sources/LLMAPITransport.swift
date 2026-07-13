@@ -39,4 +39,25 @@ enum LLMAPITransport {
         defer { session.finishTasksAndInvalidate() }
         return try await session.upload(for: request, from: bodyData)
     }
+
+    /// Validate an API key by hitting the provider's lightweight /models
+    /// endpoint.
+    static func validateAPIKey(_ key: String, baseURL: String) async -> Bool {
+        let trimmedKey = key.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmedKey.isEmpty else { return false }
+        let trimmedBase = baseURL.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let url = URL(string: trimmedBase), url.scheme != nil else { return false }
+
+        var request = URLRequest(url: url.appendingPathComponent("models"))
+        request.timeoutInterval = 10
+        request.setValue("Bearer \(trimmedKey)", forHTTPHeaderField: "Authorization")
+
+        do {
+            let (_, response) = try await data(for: request)
+            let status = (response as? HTTPURLResponse)?.statusCode ?? 0
+            return status == 200
+        } catch {
+            return false
+        }
+    }
 }

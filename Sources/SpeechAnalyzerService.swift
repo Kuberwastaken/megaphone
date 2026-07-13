@@ -383,6 +383,11 @@ final class SpeechAnalyzerStreamingSession: @unchecked Sendable {
 
         try await analyzer.finalizeAndFinishThroughEndOfInput()
         let transcript = try await SpeechAnalyzerService.awaiting(resultsTask, timeout: 60)
+        queue.sync {
+            // Analysis is complete; a later cancel() must be a pure no-op.
+            self.analyzer = nil
+            self.resultsTask = nil
+        }
         return transcript.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 

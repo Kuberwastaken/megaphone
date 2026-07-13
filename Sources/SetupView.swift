@@ -7,8 +7,6 @@ import ServiceManagement
 private struct SetupProviderSettingsSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Binding var apiBaseURLInput: String
-    @Binding var transcriptionAPIURLInput: String
-    @Binding var transcriptionAPIKeyInput: String
 
     var body: some View {
         VStack(spacing: 0) {
@@ -28,8 +26,6 @@ private struct SetupProviderSettingsSheet: View {
             ScrollView {
                 ProviderSettingsFields(
                     apiBaseURLInput: $apiBaseURLInput,
-                    transcriptionAPIURLInput: $transcriptionAPIURLInput,
-                    transcriptionAPIKeyInput: $transcriptionAPIKeyInput,
                     showsModelDescription: true
                 )
                 .padding(20)
@@ -77,8 +73,6 @@ struct SetupView: View {
     @State private var accessibilityGranted = false
     @State private var apiKeyInput: String = ""
     @State private var apiBaseURLInput: String = ""
-    @State private var transcriptionAPIURLInput: String = ""
-    @State private var transcriptionAPIKeyInput: String = ""
     @State private var isValidatingKey = false
     @State private var keyValidationError: String?
     @State private var showingProviderSettingsSheet = false
@@ -197,8 +191,6 @@ struct SetupView: View {
         .onAppear {
             apiKeyInput = appState.apiKey
             apiBaseURLInput = appState.apiBaseURL
-            transcriptionAPIURLInput = appState.transcriptionAPIURL
-            transcriptionAPIKeyInput = appState.transcriptionAPIKey
             customVocabularyInput = appState.customVocabulary
             checkMicPermission()
             checkAccessibility()
@@ -213,9 +205,7 @@ struct SetupView: View {
         }
         .sheet(isPresented: $showingProviderSettingsSheet) {
             SetupProviderSettingsSheet(
-                apiBaseURLInput: $apiBaseURLInput,
-                transcriptionAPIURLInput: $transcriptionAPIURLInput,
-                transcriptionAPIKeyInput: $transcriptionAPIKeyInput
+                apiBaseURLInput: $apiBaseURLInput
             )
                 .environmentObject(appState)
         }
@@ -397,7 +387,7 @@ struct SetupView: View {
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Enter an API key for your OpenAI-compatible provider. If you are not using Groq, expand the advanced provider settings and enter that provider's base URL and model IDs before continuing.")
+                Text("Transcription runs entirely on your Mac — no API needed. This key powers the AI cleanup and context steps. Enter an API key for your OpenAI-compatible provider; if you are not using Groq, expand the advanced provider settings and enter that provider's base URL and model IDs before continuing.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1142,7 +1132,7 @@ struct SetupView: View {
         keyValidationError = nil
 
         Task {
-            let valid = await TranscriptionService.validateAPIKey(key, baseURL: resolvedBaseURL)
+            let valid = await LLMAPITransport.validateAPIKey(key, baseURL: resolvedBaseURL)
             await MainActor.run {
                 isValidatingKey = false
                 if valid {
@@ -1289,8 +1279,7 @@ struct SetupView: View {
 
                     Task {
                         do {
-                            let service = try appState.makeTranscriptionService()
-                            let transcript = try await service.transcribe(fileURL: url)
+                            let transcript = try await appState.transcribeAudioFile(url)
                             await MainActor.run {
                                 testHotkeyHarness.isTranscribing = false
                                 testAudioRecorder = nil

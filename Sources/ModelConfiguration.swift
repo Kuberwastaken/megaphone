@@ -26,11 +26,6 @@ public struct ModelConfiguration {
         "meta-llama/llama-prompt-guard-2-86m"
     ]
 
-    public static let transcriptionModels = [
-        "whisper-large-v3",
-        "whisper-large-v3-turbo"
-    ]
-
     public static func config(for model: String) -> ModelConfig {
         var cleanModel = model.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
@@ -141,20 +136,6 @@ public struct ModelConfiguration {
                 shouldStripThinkTags: false
             )
         } else if cleanModel == "groq/compound-mini" {
-            return ModelConfig(
-                maxCompletionTokens: nil,
-                reasoningEffort: nil,
-                includeReasoning: nil,
-                shouldStripThinkTags: false
-            )
-        } else if cleanModel == "whisper-large-v3" {
-            return ModelConfig(
-                maxCompletionTokens: nil,
-                reasoningEffort: nil,
-                includeReasoning: nil,
-                shouldStripThinkTags: false
-            )
-        } else if cleanModel == "whisper-large-v3-turbo" {
             return ModelConfig(
                 maxCompletionTokens: nil,
                 reasoningEffort: nil,

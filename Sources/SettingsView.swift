@@ -41,18 +41,10 @@ private let iso8601DayFormatter: DateFormatter = {
 struct ProviderSettingsFields: View {
     @EnvironmentObject var appState: AppState
     @Binding var apiBaseURLInput: String
-    @Binding var transcriptionAPIURLInput: String
-    @Binding var transcriptionAPIKeyInput: String
     @FocusState private var isEditingAPIBaseURL: Bool
-    @FocusState private var isEditingTranscriptionModel: Bool
-    @FocusState private var isEditingRealtimeStreamingModel: Bool
     @FocusState private var isEditingPostProcessingModel: Bool
     @FocusState private var isEditingPostProcessingFallbackModel: Bool
     @FocusState private var isEditingContextModel: Bool
-    @FocusState private var transcriptionAPIURLFocused: Bool
-    @FocusState private var transcriptionAPIKeyFocused: Bool
-    @State private var transcriptionModelDraft: String = ""
-    @State private var realtimeStreamingModelDraft: String = ""
     @State private var postProcessingModelDraft: String = ""
     @State private var postProcessingFallbackModelDraft: String = ""
     @State private var contextModelDraft: String = ""
@@ -68,20 +60,6 @@ struct ProviderSettingsFields: View {
         let resolvedBaseURL = trimmed.isEmpty ? AppState.defaultAPIBaseURL : trimmed
         apiBaseURLInput = resolvedBaseURL
         appState.apiBaseURL = resolvedBaseURL
-    }
-
-    private func commitTranscriptionModel() {
-        let trimmed = transcriptionModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptionModelDraft = trimmed
-        guard appState.transcriptionModel != trimmed else { return }
-        appState.transcriptionModel = trimmed
-    }
-
-    private func commitRealtimeStreamingModel() {
-        let trimmed = realtimeStreamingModelDraft.trimmingCharacters(in: .whitespacesAndNewlines)
-        realtimeStreamingModelDraft = trimmed
-        guard appState.realtimeStreamingModel != trimmed else { return }
-        appState.realtimeStreamingModel = trimmed
     }
 
     private func commitPostProcessingModel() {
@@ -134,20 +112,6 @@ struct ProviderSettingsFields: View {
         contextModelDraft = trimmed
         guard appState.contextModel != trimmed else { return }
         appState.contextModel = trimmed
-    }
-
-    private func commitTranscriptionAPIURL() {
-        let trimmed = transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptionAPIURLInput = trimmed
-        guard appState.transcriptionAPIURL != trimmed else { return }
-        appState.transcriptionAPIURL = trimmed
-    }
-
-    private func commitTranscriptionAPIKey() {
-        let trimmed = transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        transcriptionAPIKeyInput = trimmed
-        guard appState.transcriptionAPIKey != trimmed else { return }
-        appState.transcriptionAPIKey = trimmed
     }
 
     var body: some View {
@@ -249,150 +213,11 @@ struct ProviderSettingsFields: View {
                 }
             )
 
-            ModelDropdownView(
-                title: "Transcription Model",
-                subtitle: "Used for speech-to-text transcription.",
-                predefinedModels: ModelConfiguration.transcriptionModels,
-                defaultModel: AppState.defaultTranscriptionModel,
-                textDraft: $transcriptionModelDraft,
-                onCommit: commitTranscriptionModel,
-                onReset: {
-                    transcriptionModelDraft = AppState.defaultTranscriptionModel
-                    appState.transcriptionModel = AppState.defaultTranscriptionModel
-                }
-            )
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Transcription Language")
-                    .font(.caption.weight(.semibold))
-                Picker("", selection: $appState.transcriptionLanguage) {
-                    ForEach(AppState.transcriptionLanguageOptions, id: \.code) { option in
-                        Text(option.name).tag(option.code)
-                    }
-                }
-                .accessibilityLabel("Transcription Language")
-                .labelsHidden()
-                Text("Hint to the transcription model. Auto-detect works for most users. Pick a specific language if you see wrong-script characters (for example Chinese) appear in your output.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Transcription API URL")
-                    .font(.caption.weight(.semibold))
-                HStack(spacing: 8) {
-                    TextField("Uses API Base URL when empty", text: $transcriptionAPIURLInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .focused($transcriptionAPIURLFocused)
-                        .onSubmit {
-                            commitTranscriptionAPIURL()
-                        }
-                        .onChange(of: transcriptionAPIURLFocused) { isFocused in
-                            if !isFocused {
-                                commitTranscriptionAPIURL()
-                            }
-                        }
-                    if !transcriptionAPIURLInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Clear") {
-                            transcriptionAPIURLInput = ""
-                            appState.transcriptionAPIURL = ""
-                        }
-                        .font(.caption)
-                    }
-                }
-            }
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Transcription API Key")
-                    .font(.caption.weight(.semibold))
-                HStack(spacing: 8) {
-                    SecureField("Uses API Key when empty", text: $transcriptionAPIKeyInput)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                        .focused($transcriptionAPIKeyFocused)
-                        .onSubmit {
-                            commitTranscriptionAPIKey()
-                        }
-                        .onChange(of: transcriptionAPIKeyFocused) { isFocused in
-                            if !isFocused {
-                                commitTranscriptionAPIKey()
-                            }
-                        }
-                    if !transcriptionAPIKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Clear") {
-                            transcriptionAPIKeyInput = ""
-                            appState.transcriptionAPIKey = ""
-                        }
-                        .font(.caption)
-                    }
-                }
-            }
-
-            Divider()
-
-            Toggle(
-                "Begin transcribing while recording",
-                isOn: $appState.prefetchTranscriptionEnabled
-            )
-            Text("Submits audio to the transcription provider in 28-second background chunks while you speak. By the time you press stop, most of the transcript is already ready. Works with any HTTP transcription provider — no special server required.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Divider()
-
-            Toggle(
-                "Stream audio while recording (realtime, requires WebSocket)",
-                isOn: $appState.realtimeStreamingEnabled
-            )
-            Text("Streams audio through the provider's OpenAI-compatible /v1/realtime WebSocket. Takes priority over background transcription when both are enabled.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Realtime Transcription Model")
-                    .font(.caption.weight(.semibold))
-                HStack(spacing: 8) {
-                    TextField("Required by some providers, e.g. gpt-4o-transcribe", text: $realtimeStreamingModelDraft)
-                        .textFieldStyle(.roundedBorder)
-                        .focused($isEditingRealtimeStreamingModel)
-                        .onSubmit {
-                            commitRealtimeStreamingModel()
-                        }
-                        .onChange(of: isEditingRealtimeStreamingModel) { isEditing in
-                            if !isEditing {
-                                commitRealtimeStreamingModel()
-                            }
-                        }
-                    if !realtimeStreamingModelDraft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                        Button("Reset") {
-                            realtimeStreamingModelDraft = ""
-                            appState.realtimeStreamingModel = ""
-                        }
-                        .font(.caption)
-                    }
-                }
-                Text("Used only for realtime streaming. Leave empty for providers that supply a server default.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
         }
         .onAppear {
-            transcriptionModelDraft = appState.transcriptionModel
-            realtimeStreamingModelDraft = appState.realtimeStreamingModel
             postProcessingModelDraft = appState.postProcessingModel
             postProcessingFallbackModelDraft = appState.postProcessingFallbackModel
             contextModelDraft = appState.contextModel
-        }
-        .onChange(of: appState.transcriptionModel) { value in
-            if !isEditingTranscriptionModel {
-                transcriptionModelDraft = value
-            }
-        }
-        .onChange(of: appState.realtimeStreamingModel) { value in
-            if !isEditingRealtimeStreamingModel {
-                realtimeStreamingModelDraft = value
-            }
         }
         .onChange(of: appState.postProcessingModel) { value in
             if !isEditingPostProcessingModel {
@@ -417,6 +242,102 @@ struct ProviderSettingsFields: View {
                 .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { value in
                     now = value
                 }
+        }
+    }
+}
+
+/// Language picker plus model install status for Apple's on-device
+/// SpeechAnalyzer. Transcription runs entirely on this Mac — there is no
+/// provider, model ID, or API key to configure.
+struct OnDeviceTranscriptionSettings: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Speech is transcribed on this Mac by Apple's on-device model. Audio never leaves your computer for transcription.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Transcription Language")
+                    .font(.caption.weight(.semibold))
+                Picker("", selection: $appState.transcriptionLanguage) {
+                    ForEach(appState.transcriptionLanguageOptions, id: \.code) { option in
+                        Text(option.name).tag(option.code)
+                    }
+                }
+                .accessibilityLabel("Transcription Language")
+                .labelsHidden()
+                Text("Languages supported by the on-device speech model. Auto uses your system language.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
+            SpeechModelStatusRow(
+                modelManager: appState.speechModelManager,
+                localePreference: appState.transcriptionLanguage
+            )
+        }
+    }
+}
+
+/// Shows the install/download state of the on-device speech model for the
+/// selected language, with a download button when assets are missing.
+struct SpeechModelStatusRow: View {
+    @ObservedObject var modelManager: SpeechModelManager
+    let localePreference: String
+
+    private var needsDownload: Bool {
+        switch modelManager.status {
+        case .needsDownload, .failed: return true
+        default: return false
+        }
+    }
+
+    private var isDownloading: Bool {
+        if case .downloading = modelManager.status { return true }
+        return false
+    }
+
+    var body: some View {
+        HStack(spacing: 8) {
+            if isDownloading {
+                ProgressView()
+                    .controlSize(.small)
+            } else {
+                Image(systemName: statusSymbol)
+                    .foregroundStyle(statusColor)
+            }
+            Text(modelManager.status.description)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+            Spacer()
+            if needsDownload {
+                Button("Download") {
+                    modelManager.download(localePreference: localePreference)
+                }
+                .font(.caption)
+            }
+        }
+        .onAppear {
+            modelManager.refresh(localePreference: localePreference)
+        }
+    }
+
+    private var statusSymbol: String {
+        switch modelManager.status {
+        case .installed: return "checkmark.circle.fill"
+        case .needsDownload: return "arrow.down.circle"
+        case .unknown: return "circle.dotted"
+        default: return "exclamationmark.triangle.fill"
+        }
+    }
+
+    private var statusColor: Color {
+        switch modelManager.status {
+        case .installed: return .green
+        case .needsDownload, .unknown: return .secondary
+        default: return .orange
         }
     }
 }
@@ -547,8 +468,6 @@ struct GeneralSettingsView: View {
     @State private var screensVersion = 0
     @State private var apiKeyInput: String = ""
     @State private var apiBaseURLInput: String = ""
-    @State private var transcriptionAPIURLInput: String = ""
-    @State private var transcriptionAPIKeyInput: String = ""
     @State private var advancedProviderSettingsExpanded = false
     @State private var isValidatingKey = false
     @State private var keyValidationError: String?
@@ -727,6 +646,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("API Key", icon: "key.fill") {
                     apiKeySection
                 }
+                SettingsCard("Transcription", icon: "waveform") {
+                    OnDeviceTranscriptionSettings()
+                }
                 SettingsCard("Output Language", icon: "globe") {
                     outputLanguageSection
                 }
@@ -769,8 +691,6 @@ struct GeneralSettingsView: View {
         .onAppear {
             apiKeyInput = appState.apiKey
             apiBaseURLInput = appState.apiBaseURL
-            transcriptionAPIURLInput = appState.transcriptionAPIURL
-            transcriptionAPIKeyInput = appState.transcriptionAPIKey
             customVocabularyInput = appState.customVocabulary
             checkMicPermission()
             appState.refreshLaunchAtLoginStatus()
@@ -778,16 +698,6 @@ struct GeneralSettingsView: View {
         }
         .onDisappear {
             commitCustomVocabulary()
-        }
-        .onChange(of: appState.transcriptionAPIURL) { value in
-            if transcriptionAPIURLInput != value {
-                transcriptionAPIURLInput = value
-            }
-        }
-        .onChange(of: appState.transcriptionAPIKey) { value in
-            if transcriptionAPIKeyInput != value {
-                transcriptionAPIKeyInput = value
-            }
         }
     }
 
@@ -1022,8 +932,6 @@ struct GeneralSettingsView: View {
                     Divider()
                     ProviderSettingsFields(
                         apiBaseURLInput: $apiBaseURLInput,
-                        transcriptionAPIURLInput: $transcriptionAPIURLInput,
-                        transcriptionAPIKeyInput: $transcriptionAPIKeyInput,
                         showsModelDescription: false
                     )
                 }
@@ -1049,7 +957,7 @@ struct GeneralSettingsView: View {
         keyValidationSuccess = false
 
         Task {
-            let valid = await TranscriptionService.validateAPIKey(
+            let valid = await LLMAPITransport.validateAPIKey(
                 key,
                 baseURL: baseURL.isEmpty ? AppState.defaultAPIBaseURL : baseURL
             )

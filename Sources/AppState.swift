@@ -200,9 +200,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private let apiKeyStorageKey = "groq_api_key"
     private let apiBaseURLStorageKey = "api_base_url"
-    private let transcriptionModelStorageKey = "transcription_model"
-    private let transcriptionAPIURLStorageKey = "transcription_api_url"
-    private let transcriptionAPIKeyStorageKey = "transcription_api_key"
     private let postProcessingModelStorageKey = "post_processing_model"
     private let postProcessingFallbackModelStorageKey = "post_processing_fallback_model"
     private let contextModelStorageKey = "context_model"
@@ -236,9 +233,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let commandModeStyleStorageKey = "command_mode_style"
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
     private let outputLanguageStorageKey = "output_language"
-    private let realtimeStreamingEnabledStorageKey = "realtime_streaming_enabled"
-    private let realtimeStreamingModelStorageKey = "realtime_streaming_model"
-    private let prefetchTranscriptionEnabledStorageKey = "prefetch_transcription_enabled"
     private let dictationAudioInterruptionEnabledStorageKey = "dictation_audio_interruption_enabled"
     private let pasteAfterShortcutReleaseDelay: TimeInterval = 0.03
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
@@ -246,42 +240,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     let maxPipelineHistoryCount = 20
     static let defaultContextScreenshotMaxDimension = Int(AppContextService.defaultScreenshotMaxDimension)
     static let contextScreenshotDimensionOptions = [1024, 768, 640, 512]
-    static let defaultTranscriptionModel = "whisper-large-v3"
-    static let transcriptionLanguageOptions: [(code: String, name: String)] = [
-        ("", "Auto-detect"),
-        ("en", "English"),
-        ("es", "Spanish"),
-        ("fr", "French"),
-        ("de", "German"),
-        ("it", "Italian"),
-        ("pt", "Portuguese"),
-        ("nl", "Dutch"),
-        ("ru", "Russian"),
-        ("ja", "Japanese"),
-        ("ko", "Korean"),
-        ("zh", "Chinese"),
-        ("ar", "Arabic"),
-        ("hi", "Hindi"),
-        ("hinglish", "Hinglish"),
-        ("gu", "Gujarati"),
-        ("gujlish", "Gujlish"),
-        ("tr", "Turkish"),
-        ("pl", "Polish"),
-        ("uk", "Ukrainian"),
-        ("sv", "Swedish"),
-        ("no", "Norwegian"),
-        ("da", "Danish"),
-        ("fi", "Finnish"),
-        ("cs", "Czech"),
-        ("el", "Greek"),
-        ("he", "Hebrew"),
-        ("vi", "Vietnamese"),
-        ("th", "Thai"),
-        ("id", "Indonesian"),
-        ("ro", "Romanian"),
-        ("hu", "Hungarian"),
-        ("ca", "Catalan")
-    ]
     static let defaultPostProcessingModel = "openai/gpt-oss-20b"
     static let defaultPostProcessingFallbackModel = "meta-llama/llama-4-scout-17b-16e-instruct"
     static let defaultContextModel = "qwen/qwen3.6-27b"
@@ -307,24 +265,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             persistAPIBaseURL(apiBaseURL)
             rebuildContextService()
-        }
-    }
-
-    @Published var transcriptionAPIURL: String {
-        didSet {
-            persistOptionalAPIValue(transcriptionAPIURL, account: transcriptionAPIURLStorageKey)
-        }
-    }
-
-    @Published var transcriptionAPIKey: String {
-        didSet {
-            persistOptionalAPIValue(transcriptionAPIKey, account: transcriptionAPIKeyStorageKey)
-        }
-    }
-
-    @Published var transcriptionModel: String {
-        didSet {
-            UserDefaults.standard.set(transcriptionModel, forKey: transcriptionModelStorageKey)
         }
     }
 
@@ -421,8 +361,19 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return
             }
             UserDefaults.standard.set(normalized, forKey: transcriptionLanguageStorageKey)
+            speechModelManager.refresh(localePreference: normalized)
         }
     }
+
+    /// Locales the on-device speech model supports, for the settings picker.
+    /// Loaded asynchronously from `SpeechTranscriber.supportedLocales`.
+    @Published var transcriptionLanguageOptions: [(code: String, name: String)] = [
+        ("auto", "Auto (System Language)")
+    ]
+
+    /// Install/download state of the on-device speech model for the selected
+    /// language, surfaced in Settings and Setup.
+    let speechModelManager = SpeechModelManager()
 
     @Published var customSystemPrompt: String {
         didSet {
@@ -478,37 +429,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var shortcutStartDelay: TimeInterval {
         didSet {
             UserDefaults.standard.set(shortcutStartDelay, forKey: shortcutStartDelayStorageKey)
-        }
-    }
-
-    /// Stream audio to the transcription backend during recording via the
-    /// OpenAI Realtime WebSocket. Reduces wall-clock latency between "stop"
-    /// and text-ready because most of the transcription work happens while
-    /// the user is still speaking.
-    @Published var realtimeStreamingEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(realtimeStreamingEnabled, forKey: realtimeStreamingEnabledStorageKey)
-        }
-    }
-
-    /// Model ID the realtime WebSocket should transcribe with. Empty means
-    /// "use the server's default".
-    @Published var realtimeStreamingModel: String {
-        didSet {
-            UserDefaults.standard.set(realtimeStreamingModel, forKey: realtimeStreamingModelStorageKey)
-        }
-    }
-
-    /// When true, audio is transcribed in 28-second background chunks while
-    /// recording so only the tail needs processing after the user stops.
-    /// Ignored when ``realtimeStreamingEnabled`` is also true (realtime takes
-    /// priority). Works with any HTTP transcription provider.
-    @Published var prefetchTranscriptionEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(
-                prefetchTranscriptionEnabled,
-                forKey: prefetchTranscriptionEnabledStorageKey
-            )
         }
     }
 
@@ -651,8 +571,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingManualCommandInvocation = false
     private var pendingShortcutStartTask: Task<Void, Never>?
     private var pendingShortcutStartMode: RecordingTriggerMode?
-    private var realtimeService: RealtimeTranscriptionService?
-    private var prefetchTranscriber: PrefetchTranscriber?
+    private var nativeStreamingSession: SpeechAnalyzerStreamingSession?
     private var automaticTerminationDisabled = false
     private var activeAudioInterruption: ActiveAudioInterruption?
     private var pendingOverlayDismissToken: UUID?
@@ -669,9 +588,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let hasCompletedSetup = UserDefaults.standard.bool(forKey: "hasCompletedSetup")
         let apiKey = Self.loadStoredAPIKey(account: apiKeyStorageKey)
         let apiBaseURL = Self.loadStoredAPIBaseURL(account: "api_base_url")
-        let transcriptionModel = UserDefaults.standard.string(forKey: transcriptionModelStorageKey) ?? Self.defaultTranscriptionModel
-        let transcriptionAPIURL = Self.loadOptionalStoredAPIValue(account: transcriptionAPIURLStorageKey)
-        let transcriptionAPIKey = Self.loadStoredAPIKey(account: transcriptionAPIKeyStorageKey)
         let postProcessingModel = UserDefaults.standard.string(forKey: postProcessingModelStorageKey) ?? Self.defaultPostProcessingModel
         let postProcessingFallbackModel = UserDefaults.standard.string(forKey: postProcessingFallbackModelStorageKey) ?? Self.defaultPostProcessingFallbackModel
         let contextModel = Self.loadStoredContextModel(key: contextModelStorageKey)
@@ -725,11 +641,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             : UserDefaults.standard.bool(forKey: preserveClipboardStorageKey)
         let preserveExactWording = UserDefaults.standard.bool(forKey: preserveExactWordingStorageKey)
         let keepDictationInClipboardHistory = UserDefaults.standard.bool(forKey: keepDictationInClipboardHistoryStorageKey)
-        let realtimeStreamingEnabled = UserDefaults.standard.bool(forKey: realtimeStreamingEnabledStorageKey)
-        let realtimeStreamingModel = UserDefaults.standard.string(forKey: realtimeStreamingModelStorageKey) ?? ""
-        let prefetchTranscriptionEnabled = UserDefaults.standard.object(forKey: prefetchTranscriptionEnabledStorageKey) == nil
-            ? true
-            : UserDefaults.standard.bool(forKey: prefetchTranscriptionEnabledStorageKey)
         let dictationAudioInterruptionEnabled = UserDefaults.standard.bool(
             forKey: dictationAudioInterruptionEnabledStorageKey
         )
@@ -778,9 +689,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.hasCompletedSetup = hasCompletedSetup
         self.apiKey = apiKey
         self.apiBaseURL = apiBaseURL
-        self.transcriptionAPIURL = transcriptionAPIURL
-        self.transcriptionAPIKey = transcriptionAPIKey
-        self.transcriptionModel = transcriptionModel
         self.postProcessingModel = postProcessingModel
         self.postProcessingFallbackModel = postProcessingFallbackModel
         self.contextModel = contextModel
@@ -806,9 +714,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.preserveClipboard = preserveClipboard
         self.preserveExactWording = preserveExactWording
         self.keepDictationInClipboardHistory = keepDictationInClipboardHistory
-        self.realtimeStreamingEnabled = realtimeStreamingEnabled
-        self.realtimeStreamingModel = realtimeStreamingModel
-        self.prefetchTranscriptionEnabled = prefetchTranscriptionEnabled
         self.dictationAudioInterruptionEnabled = dictationAudioInterruptionEnabled
         self.isPressEnterVoiceCommandEnabled = isPressEnterVoiceCommandEnabled
         self.alertSoundsEnabled = alertSoundsEnabled
@@ -859,6 +764,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         // Clear any stale recording flag left over from an unclean exit.
         AppState.writeRecordingStateFlag(false)
+
+        // Populate the on-device speech locale picker and current model
+        // status; both come from async Speech framework APIs.
+        let languagePreference = transcriptionLanguage
+        Task { @MainActor [weak self] in
+            let options = await SpeechLocaleResolver.pickerOptions()
+            guard let self else { return }
+            self.transcriptionLanguageOptions = options
+            self.speechModelManager.refresh(localePreference: languagePreference)
+        }
     }
 
     deinit {
@@ -1045,51 +960,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
         return stored.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
+    /// Keeps the stored language preference tidy. Values are validated
+    /// against the on-device model's supported locales at resolution time
+    /// (`SpeechLocaleResolver`), so this only canonicalizes "empty means
+    /// auto" and legacy lowercase codes written by earlier versions.
     private static func normalizeTranscriptionLanguage(_ language: String) -> String {
-        let normalized = language.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
-        guard transcriptionLanguageOptions.contains(where: { $0.code == normalized }) else {
-            return ""
-        }
-        return normalized
+        let trimmed = language.trimmingCharacters(in: .whitespacesAndNewlines)
+        return trimmed.isEmpty ? "auto" : trimmed
     }
 
-    private var resolvedTranscriptionBaseURL: String {
-        let trimmed = transcriptionAPIURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? apiBaseURL : trimmed
-    }
-
-    private var resolvedTranscriptionAPIKey: String {
-        let trimmed = transcriptionAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? apiKey : trimmed
-    }
-
-    func makeTranscriptionService() throws -> TranscriptionService {
-        let isHinglish = transcriptionLanguage == "hinglish"
-        let isGujlish = transcriptionLanguage == "gujlish"
-        let isMixedLanguage = isHinglish || isGujlish
-        let customPrompt: String?
-        if isHinglish {
-            customPrompt = "kaise ho, main theek hoon, what are you doing, audio includes Hinglish (Hindi in English script)"
-        } else if isGujlish {
-            customPrompt = "kem cho, hu thik chu, what are you doing, audio includes Gujlish (Gujarati in English script)"
-        } else {
-            customPrompt = nil
-        }
-        return try TranscriptionService(
-            apiKey: resolvedTranscriptionAPIKey,
-            baseURL: resolvedTranscriptionBaseURL,
-            transcriptionModel: transcriptionModel,
-            language: isMixedLanguage ? "en" : resolvedTranscriptionLanguage,
-            prompt: customPrompt
+    /// Transcribe a recorded audio file with the on-device speech model,
+    /// biased toward the user's custom vocabulary.
+    func transcribeAudioFile(_ fileURL: URL) async throws -> String {
+        try await SpeechAnalyzerService.transcribe(
+            fileURL: fileURL,
+            localePreference: transcriptionLanguage,
+            vocabulary: customVocabulary
         )
-    }
-
-    private var resolvedTranscriptionLanguage: String? {
-        let normalized = Self.normalizeTranscriptionLanguage(transcriptionLanguage)
-        if normalized == "hinglish" || normalized == "gujlish" {
-            return "en"
-        }
-        return normalized.isEmpty ? nil : normalized
     }
 
     private func persistShortcut(_ binding: ShortcutBinding, key: String) {
@@ -1249,8 +1136,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         Task {
             do {
-                let transcriptionService = try makeTranscriptionService()
-                let rawTranscript = try await transcriptionService.transcribe(fileURL: audioURL)
+                let rawTranscript = try await self.transcribeAudioFile(audioURL)
                 let parsedTranscript = Self.parseTranscriptCommands(
                     from: rawTranscript,
                     pressEnterCommandEnabled: self.isPressEnterVoiceCommandEnabled
@@ -1857,7 +1743,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         debugStatusMessage = "Cancelled"
         statusText = "Cancelled"
         overlayManager.dismiss()
-        tearDownRealtimeService()
+        tearDownNativeStreamingSession()
         audioRecorder.cancelRecording()
         restoreAudioInterruptionIfNeeded()
         endCriticalDictationActivity()
@@ -2280,8 +2166,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
         }
 
-        startRealtimeStreamingIfEnabled()
-        startPrefetchTranscriberIfEnabled()
+        startNativeStreamingSession()
 
         // Start engine on background thread so UI isn't blocked
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2318,7 +2203,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         contextCaptureTask?.cancel()
         contextCaptureTask = nil
         capturedContext = nil
-        tearDownRealtimeService()
+        tearDownNativeStreamingSession()
         audioRecorder.cleanup()
         restoreAudioInterruptionIfNeeded()
         isRecording = false
@@ -2635,37 +2520,34 @@ final class AppState: ObservableObject, @unchecked Sendable {
     }
 
     /// Resolve the final transcript, trying sources in priority order:
-    ///   1. realtime WebSocket (`realtimeService`) — lowest latency when available
-    ///   2. HTTP pre-fetch (`prefetchTranscriber`) — background chunks already done
-    ///   3. plain file upload (`fileService`) — universal fallback
-    private static func resolveRawTranscript(
-        realtimeService: RealtimeTranscriptionService?,
-        prefetchTranscriber: PrefetchTranscriber?,
-        fileService: TranscriptionService,
+    ///   1. the streaming SpeechAnalyzer session — the audio was analyzed
+    ///      while the user was still speaking, so this is near-instant
+    ///   2. on-device analysis of the recorded file — fallback when the
+    ///      streaming session failed to start or produced nothing
+    private func resolveRawTranscript(
+        streamingSession: SpeechAnalyzerStreamingSession?,
         fileURL: URL
     ) async throws -> String {
-        if let realtimeService {
+        if let streamingSession {
             do {
                 try Task.checkCancellation()
-                return try await withTaskCancellationHandler {
-                    try await realtimeService.commitAndAwaitFinal()
+                let transcript = try await withTaskCancellationHandler {
+                    try await streamingSession.commitAndAwaitFinal()
                 } onCancel: {
-                    realtimeService.cancel()
+                    streamingSession.cancel()
                 }
+                if !transcript.isEmpty { return transcript }
+                // Empty result: fall through to file-based analysis.
             } catch is CancellationError {
                 throw CancellationError()
             } catch {
                 try Task.checkCancellation()
-                // Realtime failed; fall through to prefetch or file upload.
+                os_log(.error, log: recordingLog, "streaming transcription failed, falling back to file: %{public}@",
+                       error.localizedDescription)
+                streamingSession.cancel()
             }
         }
-        if let prefetchTranscriber {
-            try Task.checkCancellation()
-            let merged = await prefetchTranscriber.commitAndAwaitFinal()
-            if !merged.isEmpty { return merged }
-            // Empty result: fall through to file upload.
-        }
-        return try await fileService.transcribe(fileURL: fileURL)
+        return try await transcribeAudioFile(fileURL)
     }
 
     private func stopAndTranscribe() {
@@ -2712,7 +2594,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
 
             guard self.isTranscribing else {
-                self.tearDownRealtimeService()
+                self.tearDownNativeStreamingSession()
                 self.audioRecorder.cleanup()
                 self.refreshAvailableMicrophonesIfNeeded()
                 return
@@ -2732,10 +2614,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
             instructionExecutionGuardEnabled: instructionExecutionGuardEnabled
         )
 
-            let activeRealtime = self.realtimeService
-            self.realtimeService = nil
-            let activePrefetch = self.prefetchTranscriber
-            self.prefetchTranscriber = nil
+            let activeStreamingSession = self.nativeStreamingSession
+            self.nativeStreamingSession = nil
             self.audioRecorder.onPCM16Samples = nil
             self.transcriptionTask?.cancel()
             guard self.isTranscribing else {
@@ -2743,7 +2623,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     Self.deleteAudioFile(savedAudioFile.fileName)
                 }
                 self.transcribingAudioFileName = nil
-                activeRealtime?.cancel()
+                activeStreamingSession?.cancel()
                 self.audioRecorder.cleanup()
                 self.endCriticalDictationActivity()
                 self.refreshAvailableMicrophonesIfNeeded()
@@ -2751,14 +2631,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
             self.transcriptionTask = Task {
                 defer {
-                    activeRealtime?.cancel()
+                    // No-op when the session already committed; releases the
+                    // analyzer on cancellation/error paths.
+                    activeStreamingSession?.cancel()
                 }
                 do {
-                    let transcriptionService = try self.makeTranscriptionService()
-                    async let transcript = Self.resolveRawTranscript(
-                        realtimeService: activeRealtime,
-                        prefetchTranscriber: activePrefetch,
-                        fileService: transcriptionService,
+                    async let transcript = self.resolveRawTranscript(
+                        streamingSession: activeStreamingSession,
                         fileURL: transcriptionFileURL
                     )
                     let rawTranscript = try await transcript
@@ -2988,64 +2867,27 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func startRealtimeStreamingIfEnabled() {
-        guard realtimeStreamingEnabled else { return }
-        let trimmedBase = resolvedTranscriptionBaseURL.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedBase.isEmpty else {
-            os_log(.info, log: recordingLog, "realtime streaming requested but base URL is empty — skipping")
-            return
-        }
-        let model = realtimeStreamingModel.trimmingCharacters(in: .whitespacesAndNewlines)
-        let config = RealtimeTranscriptionService.Configuration(
-            baseURL: trimmedBase,
-            apiKey: resolvedTranscriptionAPIKey,
-            model: model,
-            language: resolvedTranscriptionLanguage
+    /// Start streaming microphone audio into the on-device SpeechAnalyzer.
+    /// PCM16 samples (24 kHz mono) are analyzed while the user is still
+    /// speaking, so the transcript is essentially ready at stop time. Setup
+    /// failures are deferred: they surface in `commitAndAwaitFinal()` and the
+    /// pipeline falls back to file-based analysis.
+    private func startNativeStreamingSession() {
+        let session = SpeechAnalyzerStreamingSession(
+            localePreference: transcriptionLanguage,
+            vocabulary: customVocabulary
         )
-        let service = RealtimeTranscriptionService(config: config)
-        do {
-            try service.start()
-        } catch {
-            os_log(.error, log: recordingLog, "failed to start realtime service: %{public}@", error.localizedDescription)
-            return
-        }
-        realtimeService = service
-        audioRecorder.onPCM16Samples = { [weak service] data in
-            service?.appendPCM16(data)
+        session.start()
+        nativeStreamingSession = session
+        audioRecorder.onPCM16Samples = { [weak session] data in
+            session?.appendPCM16(data)
         }
     }
 
-    private func tearDownRealtimeService() {
+    private func tearDownNativeStreamingSession() {
         audioRecorder.onPCM16Samples = nil
-        realtimeService?.cancel()
-        realtimeService = nil
-        prefetchTranscriber = nil   // discard any in-progress accumulation
-    }
-
-    /// Start background HTTP pre-transcription if enabled and realtime is off.
-    /// PCM16 samples (24 kHz mono) are accumulated and transcribed in 28-second
-    /// chunks in the background, so the majority of a long recording is already
-    /// processed by the time the user presses stop.
-    private func startPrefetchTranscriberIfEnabled() {
-        guard prefetchTranscriptionEnabled, !realtimeStreamingEnabled else { return }
-        guard let service = try? makeTranscriptionService() else { return }
-
-        // Durable transcript file: one chunk appended per 28 s as it completes.
-        // Named by Unix timestamp so recordings don't collide.
-        let ts = Int(Date().timeIntervalSince1970)
-        let saveURL = Self.audioStorageDirectory()
-            .appendingPathComponent("prefetch_transcript_\(ts).txt")
-
-        let transcriber = PrefetchTranscriber(service: service, saveURL: saveURL)
-        prefetchTranscriber = transcriber
-        audioRecorder.onPCM16Samples = { [weak transcriber] data in
-            transcriber?.appendPCM16(data)
-        }
-    }
-
-    private func tearDownPrefetchTranscriber() {
-        audioRecorder.onPCM16Samples = nil
-        prefetchTranscriber = nil
+        nativeStreamingSession?.cancel()
+        nativeStreamingSession = nil
     }
 
     private func startContextCapture() {
@@ -3157,7 +2999,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             hasShownScreenshotPermissionAlert = true
 
             // Permission errors are fatal — stop recording
-            tearDownRealtimeService()
+            tearDownNativeStreamingSession()
             audioRecorder.cancelRecording()
             audioLevelCancellable?.cancel()
             audioLevelCancellable = nil
