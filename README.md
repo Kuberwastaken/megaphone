@@ -65,6 +65,11 @@ Megaphone is, as far as I know, one of the first dictation apps built *entirely*
 2. Follow setup — grant microphone + accessibility, and optionally add a free [Groq](https://groq.com/) API key (used **only** for the AI cleanup and app-context steps; transcription never touches it)
 3. Hold `Fn` and talk — the on-device speech model downloads automatically the first time
 
+> [!NOTE]
+> Releases are not yet notarized by Apple, so macOS will warn that it "could not verify Megaphone.dmg is free of malware." Clear the quarantine flag with
+> `xattr -d com.apple.quarantine ~/Downloads/Megaphone.dmg`
+> before opening (or use System Settings → Privacy & Security → *Open Anyway*). Or skip the warning entirely by [building from source](#building-from-source).
+
 ## Privacy
 
 There is no Megaphone server and transcription happens entirely on your Mac — recorded audio never leaves your computer. If you enable AI cleanup, the only things that leave are the *text* transcript and app-context calls to the LLM provider you configured. Point it at a local model (Ollama, LM Studio, any OpenAI-compatible server) and even that stays home.
