@@ -148,11 +148,18 @@ enum SpeechAnalyzerService {
 
         let reserved = await AssetInventory.reservedLocales
         if !reserved.contains(where: { $0.identifier(.bcp47) == target }) {
+            // FreeFlow only ever needs one locale; free the slots held for
+            // previously used languages so the app's small reservation quota
+            // can't fill up after a few language switches.
+            for staleLocale in reserved {
+                await AssetInventory.release(reservedLocale: staleLocale)
+            }
             do {
                 try await AssetInventory.reserve(locale: locale)
             } catch {
-                // Reservation can fail when other apps hold every slot; assets
-                // that are already installed keep working, so log and continue.
+                // Reservation can fail when the system quota is exhausted;
+                // assets that are already installed keep working, so log and
+                // continue.
                 os_log(.error, log: speechLog, "could not reserve locale %{public}@: %{public}@",
                        target, error.localizedDescription)
             }
@@ -226,10 +233,19 @@ enum SpeechAnalyzerService {
     }
 
     /// Races `task` against a timeout so a stalled result stream can't hang
-    /// the transcription pipeline forever.
+    /// the transcription pipeline forever. The wait is wrapped in a
+    /// cancellation handler because cancelling a group child does not cancel
+    /// the unstructured task it awaits — without it, a wedged result stream
+    /// would keep the group (and caller) suspended even after the timeout.
     static func awaiting(_ task: Task<String, Error>, timeout: TimeInterval) async throws -> String {
         try await withThrowingTaskGroup(of: String.self) { group in
-            group.addTask { try await task.value }
+            group.addTask {
+                try await withTaskCancellationHandler {
+                    try await task.value
+                } onCancel: {
+                    task.cancel()
+                }
+            }
             group.addTask {
                 try await Task.sleep(nanoseconds: UInt64(timeout * 1_000_000_000))
                 throw SpeechAnalyzerServiceError.resultStreamTimedOut
@@ -513,6 +529,7 @@ final class SpeechModelManager: ObservableObject {
             do {
                 locale = try await SpeechLocaleResolver.resolve(preference: localePreference)
             } catch {
+                guard !Task.isCancelled else { return }
                 self?.status = .unsupportedLanguage(Self.displayName(for: localePreference))
                 return
             }
@@ -540,16 +557,20 @@ final class SpeechModelManager: ObservableObject {
             do {
                 locale = try await SpeechLocaleResolver.resolve(preference: localePreference)
             } catch {
+                guard !Task.isCancelled else { return }
                 self?.status = .unsupportedLanguage(Self.displayName(for: localePreference))
                 return
             }
             let name = Self.displayName(for: locale.identifier(.bcp47))
+            guard !Task.isCancelled else { return }
             self?.status = .downloading(name)
             do {
                 let transcriber = SpeechAnalyzerService.makeTranscriber(locale: locale)
                 try await SpeechAnalyzerService.ensureAssets(for: transcriber, locale: locale)
+                guard !Task.isCancelled else { return }
                 self?.status = .installed(name)
             } catch {
+                guard !Task.isCancelled else { return }
                 self?.status = .failed(error.localizedDescription)
             }
         }

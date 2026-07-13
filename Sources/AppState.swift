@@ -770,12 +770,21 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         // Populate the on-device speech locale picker and current model
         // status; both come from async Speech framework APIs.
-        let languagePreference = transcriptionLanguage
         Task { @MainActor [weak self] in
             let options = await SpeechLocaleResolver.pickerOptions()
             guard let self else { return }
             self.transcriptionLanguageOptions = options
-            self.speechModelManager.refresh(localePreference: languagePreference)
+            // Migrate legacy stored preferences (bare ISO codes like "en",
+            // "hinglish"/"gujlish") to the BCP-47 tags the picker uses, so
+            // upgrading users keep a valid selection.
+            if !options.contains(where: { $0.code == self.transcriptionLanguage }) {
+                if let resolved = try? await SpeechLocaleResolver.resolve(preference: self.transcriptionLanguage) {
+                    self.transcriptionLanguage = resolved.identifier(.bcp47)
+                } else {
+                    self.transcriptionLanguage = "auto"
+                }
+            }
+            self.speechModelManager.refresh(localePreference: self.transcriptionLanguage)
         }
     }
 
@@ -2587,6 +2596,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             guard let self else { return }
             guard let fileURL else {
                 self.isTranscribing = false
+                self.tearDownNativeStreamingSession()
                 self.audioRecorder.cleanup()
                 self.endCriticalDictationActivity()
                 self.errorMessage = "No audio recorded"

@@ -16,6 +16,15 @@ jobs:
         with:
           fetch-depth: 0
 
+      - name: Select latest Xcode (macOS 26 SDK required)
+        run: |
+          XCODE_APP=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          if [ -n "$XCODE_APP" ]; then
+            sudo xcode-select -s "$XCODE_APP/Contents/Developer"
+          fi
+          xcodebuild -version
+          xcrun --show-sdk-version
+
       - name: Resolve release version
         id: version
         run: |
