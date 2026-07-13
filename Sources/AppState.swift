@@ -2414,6 +2414,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private enum TranscriptProcessingOutcome {
         case skippedEmptyRawTranscript
+        case skippedNoAPIKey
         case voiceMacro(command: String)
         case postProcessingSucceeded
         case postProcessingFailedFallback
@@ -2427,6 +2428,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
             switch self {
             case .skippedEmptyRawTranscript:
                 return "Skipped macros and post-processing for empty raw transcript"
+            case .skippedNoAPIKey:
+                return "No API key configured — using the raw on-device transcript"
             case .voiceMacro(let command):
                 return "Voice macro used: \(command)"
             case .postProcessingSucceeded:
@@ -2465,7 +2468,15 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return ("", .skippedEmptyRawTranscript, "")
         }
 
+        // The LLM key is optional: without one, skip the doomed network
+        // round-trips and use the on-device transcript (or the untouched
+        // selection for Edit Mode) directly.
+        let llmKeyMissing = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+
         if case .command(let invocation, let selectedText) = intent {
+            if llmKeyMissing {
+                return (selectedText, .commandModeFailedFallback(invocation: invocation), "")
+            }
             do {
                 let result = try await postProcessingService.commandTransform(
                     selectedText: selectedText,
@@ -2499,7 +2510,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         //      the target language.
         if preserveExactWording {
             let targetLanguage = outputLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-            if targetLanguage.isEmpty {
+            if targetLanguage.isEmpty || llmKeyMissing {
                 return (trimmedRawTranscript, .preservedExactWording, "")
             }
             do {
@@ -2514,6 +2525,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
                        error.localizedDescription)
                 return (trimmedRawTranscript, .preservedExactWordingTranslationFailedFallback, "")
             }
+        }
+
+        if llmKeyMissing {
+            return (trimmedRawTranscript, .skippedNoAPIKey, "")
         }
 
         do {

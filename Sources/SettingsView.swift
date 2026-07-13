@@ -537,7 +537,7 @@ struct GeneralSettingsView: View {
                     // GitHub card
                     VStack(spacing: 10) {
                         HStack(spacing: 8) {
-                            AsyncImage(url: URL(string: "https://avatars.githubusercontent.com/u/992248")) { phase in
+                            AsyncImage(url: URL(string: "https://github.com/Kuberwastaken.png?size=88")) { phase in
                                 switch phase {
                                 case .success(let image):
                                     image.resizable().aspectRatio(contentMode: .fill)

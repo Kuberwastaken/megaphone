@@ -136,11 +136,23 @@ struct SetupView: View {
                     Group {
                         if currentStep != .ready {
                             if currentStep == .apiKey {
-                                Button(isValidatingKey ? "Validating..." : "Continue") {
-                                    validateAndContinue()
+                                HStack(spacing: 10) {
+                                    Button("Skip") {
+                                        keyValidationError = nil
+                                        withAnimation {
+                                            currentStep = nextStep(currentStep)
+                                        }
+                                    }
+                                    .buttonStyle(.plain)
+                                    .foregroundStyle(.secondary)
+                                    .disabled(isValidatingKey)
+
+                                    Button(isValidatingKey ? "Validating..." : "Continue") {
+                                        validateAndContinue()
+                                    }
+                                    .keyboardShortcut(.defaultAction)
+                                    .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
                                 }
-                                .keyboardShortcut(.defaultAction)
-                                .disabled(apiKeyInput.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || isValidatingKey)
                             } else if currentStep == .vocabulary {
                                 Button("Continue") {
                                     saveCustomVocabularyAndContinue()
@@ -273,7 +285,7 @@ struct SetupView: View {
 
             VStack(spacing: 10) {
                 HStack(spacing: 8) {
-                    AsyncImage(url: URL(string: "https://avatars.githubusercontent.com/u/992248")) { phase in
+                    AsyncImage(url: URL(string: "https://github.com/Kuberwastaken.png?size=88")) { phase in
                         switch phase {
                         case .success(let image):
                             image.resizable().aspectRatio(contentMode: .fill)
@@ -383,11 +395,11 @@ struct SetupView: View {
                     .font(.system(size: 60))
                     .foregroundStyle(.blue)
 
-                Text("API Key")
+                Text("API Key (Optional)")
                     .font(.title)
                     .fontWeight(.bold)
 
-                Text("Transcription runs entirely on your Mac — no API needed. This key powers the AI cleanup and context steps. Enter an API key for your OpenAI-compatible provider; if you are not using Groq, expand the advanced provider settings and enter that provider's base URL and model IDs before continuing.")
+                Text("Transcription runs entirely on your Mac — no account or API key needed. A key from Groq or any OpenAI-compatible provider only enables AI transcript cleanup and app-context awareness. Skip this step and \(AppName.displayName) pastes the raw on-device transcript; you can add a key anytime in Settings.")
                     .multilineTextAlignment(.center)
                     .foregroundStyle(.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -719,7 +731,7 @@ struct SetupView: View {
                 .font(.title)
                 .fontWeight(.bold)
 
-            Text("Add words and phrases that should be preserved in post-processing.")
+            Text("Add names and terms \(AppName.displayName) should get right — they guide on-device transcription and AI cleanup.")
                 .multilineTextAlignment(.center)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
