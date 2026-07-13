@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="660" height="400" viewBox="0 0 660 400" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- charcoal vertical gradient, same stops as the app icon -->
+    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#232529"/>
+      <stop offset="0.45" stop-color="#141519"/>
+      <stop offset="1" stop-color="#060709"/>
+    </linearGradient>
+    <!-- soft central glow -->
+    <radialGradient id="bgGlow" cx="0.5" cy="0.44" r="0.62">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.10"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.025"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+    <!-- edge vignette to seat the icons -->
+    <radialGradient id="vignette" cx="0.5" cy="0.5" r="0.75">
+      <stop offset="0" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="0.72" stop-color="#000000" stop-opacity="0"/>
+      <stop offset="1" stop-color="#000000" stop-opacity="0.28"/>
+    </radialGradient>
+    <!-- arrow gains presence left to right -->
+    <linearGradient id="arrowStroke" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0" stop-color="#ffffff" stop-opacity="0.14"/>
+      <stop offset="0.55" stop-color="#ffffff" stop-opacity="0.50"/>
+      <stop offset="1" stop-color="#ffffff" stop-opacity="0.78"/>
+    </linearGradient>
+    <filter id="blurM" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+    <filter id="blurL" x="-60%" y="-60%" width="220%" height="220%">
+      <feGaussianBlur stdDeviation="22"/>
+    </filter>
+  </defs>
+
+  <!-- ===== base plate ===== -->
+  <rect width="660" height="400" fill="url(#bg)"/>
+  <rect width="660" height="400" fill="url(#bgGlow)"/>
+
+  <!-- corner speculars, echoing the icon plate -->
+  <ellipse cx="150" cy="30" rx="220" ry="60" fill="#ffffff" opacity="0.05" filter="url(#blurL)"/>
+  <ellipse cx="560" cy="390" rx="220" ry="70" fill="#ffffff" opacity="0.035" filter="url(#blurL)"/>
+
+  <!-- oversized sound-arcs motif, bottom-left, barely-there -->
+  <g fill="none" stroke="#ffffff" stroke-linecap="round">
+    <path d="M 32.9 271.6 A 130 130 0 0 1 138.0 392.4" stroke-opacity="0.045" stroke-width="20"/>
+    <path d="M 42.3 224.7 A 185 185 0 0 1 192.2 382.9" stroke-opacity="0.034" stroke-width="17"/>
+    <path d="M 51.7 177.8 A 240 240 0 0 1 246.4 373.3" stroke-opacity="0.024" stroke-width="14"/>
+  </g>
+
+  <!-- top sheen band, heavily blurred so it never reads as a seam -->
+  <path d="M -30 -50 L 690 -50 L 690 80 C 500 112, 160 112, -30 80 Z"
+        fill="#ffffff" opacity="0.05" filter="url(#blurL)"/>
+
+  <!-- ===== instruction, safely at the top ===== -->
+  <text x="330" y="53"
+        font-family="FreeSans, Helvetica, Arial, sans-serif"
+        font-size="16" letter-spacing="1.6"
+        fill="#ffffff" fill-opacity="0.78"
+        text-anchor="middle">Drag Megaphone into Applications</text>
+
+  <!-- ===== glassy arrow through the gap (x 260-400, y 170) ===== -->
+  <!-- glow copy -->
+  <g filter="url(#blurM)" opacity="0.30">
+    <path d="M 276 170 L 382 170" fill="none" stroke="#ffffff" stroke-opacity="0.55" stroke-width="6" stroke-linecap="round"/>
+    <path d="M 368 158 L 386 170 L 368 182" fill="none" stroke="#ffffff" stroke-opacity="0.65" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <!-- crisp arrow -->
+  <path d="M 276 170 L 384 170" fill="none" stroke="url(#arrowStroke)" stroke-width="3.5" stroke-linecap="round"/>
+  <path d="M 368 158 L 386 170 L 368 182" fill="none" stroke="#ffffff" stroke-opacity="0.82" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"/>
+
+  <!-- edge vignette on top of everything -->
+  <rect width="660" height="400" fill="url(#vignette)"/>
+</svg>
