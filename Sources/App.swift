@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct MegaphoneApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
-    @AppStorage("show_menu_bar_icon") private var showMenuBarIcon = true
+    @AppStorage("show_menu_bar_icon") private var showMenuBarIcon = false
 
     var body: some Scene {
         MenuBarExtra(isInserted: $showMenuBarIcon) {

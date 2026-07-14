@@ -22,7 +22,6 @@ struct PrecomputedMacro {
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
-    case prompts
     case macros
     case runLog
     case debug
@@ -38,7 +37,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return "General"
-        case .prompts: return "Prompts"
         case .macros: return "Voice Macros"
         case .runLog: return "Run Log"
         case .debug: return "Debug"
@@ -48,7 +46,6 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
-        case .prompts: return "text.bubble"
         case .macros: return "music.mic"
         case .runLog: return "clock.arrow.circlepath"
         case .debug: return "wrench.and.screwdriver"
@@ -630,9 +627,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
             : Self.defaultContextScreenshotMaxDimension
         let contextScreenshotMaxDimension = Self.normalizedContextScreenshotMaxDimension(storedContextScreenshotMaxDimension)
         let shortcutStartDelay = max(0, UserDefaults.standard.double(forKey: shortcutStartDelayStorageKey))
-        let isCommandModeEnabled = UserDefaults.standard.object(forKey: commandModeEnabledStorageKey) == nil
-            ? false
-            : UserDefaults.standard.bool(forKey: commandModeEnabledStorageKey)
+        // Fully local: Edit Mode depends on the retired LLM layer, so it is
+        // force-disabled regardless of any previously stored preference.
+        let isCommandModeEnabled = false
         let commandModeStyle = CommandModeStyle(
             rawValue: UserDefaults.standard.string(forKey: commandModeStyleStorageKey) ?? ""
         ) ?? .automatic
@@ -2429,7 +2426,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             case .skippedEmptyRawTranscript:
                 return "Skipped macros and post-processing for empty raw transcript"
             case .skippedNoAPIKey:
-                return "No API key configured — using the raw on-device transcript"
+                return "Used the raw on-device transcript"
             case .voiceMacro(let command):
                 return "Voice macro used: \(command)"
             case .postProcessingSucceeded:
