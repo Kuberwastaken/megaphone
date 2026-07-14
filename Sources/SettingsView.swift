@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import ServiceManagement
+import FoundationModels
 
 // MARK: - Shared Helpers
 
@@ -695,7 +696,7 @@ struct GeneralSettingsView: View {
             }
             .pickerStyle(.menu)
 
-            Text("Smart cleanup translates the final text into this language. Exact mode preserves wording while translating literally.")
+            Text("Smart cleanup translates the final text into this language. Exact mode always keeps the spoken language.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }
@@ -720,7 +721,24 @@ struct GeneralSettingsView: View {
                 Label("Uses Apple's on-device language model when available, with Basic cleanup as a fast fallback.", systemImage: "lock.shield")
                     .font(.caption)
                     .foregroundStyle(.secondary)
+                foundationModelStatus
             }
+        }
+    }
+
+    @ViewBuilder
+    private var foundationModelStatus: some View {
+        let model = SystemLanguageModel(
+            useCase: .general,
+            guardrails: .permissiveContentTransformations
+        )
+        switch model.availability {
+        case .available:
+            Label("Apple Intelligence is ready", systemImage: "checkmark.circle.fill")
+                .foregroundStyle(.green)
+        case .unavailable(let reason):
+            Label("Basic fallback active: \(String(describing: reason))", systemImage: "exclamationmark.triangle.fill")
+                .foregroundStyle(.orange)
         }
     }
 
@@ -1231,7 +1249,7 @@ struct SmartCleanupSettingsView: View {
                 }
                 SettingsCard("Safety", icon: "shield.lefthalf.filled") {
                     VStack(alignment: .leading, spacing: 8) {
-                        Toggle("Prevent dictated prompts from being executed", isOn: $appState.instructionExecutionGuardEnabled)
+                        Label("Dictated prompts are always treated as text", systemImage: "checkmark.shield.fill")
                         Text("Treats dictated text as content to clean, never as a request for the model to answer.")
                             .font(.caption)
                             .foregroundStyle(.secondary)

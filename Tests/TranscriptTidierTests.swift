@@ -8,6 +8,7 @@ enum TranscriptTidierTests {
         testWhitespaceAndPunctuation()
         testCorrectionParsing()
         testCorrectionApplication()
+        testReplacementTextIsNotProcessedAgain()
         testIdempotence()
     }
 
@@ -84,6 +85,14 @@ enum TranscriptTidierTests {
             TranscriptTidier.tidy("The megaphone uses jsonValue.", corrections: mappings),
             "The megaphone uses jsonValue."
         )
+    }
+
+    private static func testReplacementTextIsNotProcessedAgain() {
+        let mappings = TranscriptTidier.CorrectionMapping.parse("""
+        visual studio code -> VS Code
+        code -> CODE
+        """)
+        expectEqual(TranscriptTidier.tidy("Open visual studio code.", corrections: mappings), "Open VS Code.")
     }
 
     private static func testIdempotence() {

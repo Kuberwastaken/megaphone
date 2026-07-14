@@ -116,6 +116,30 @@ Return only two sentences, no labels, no markdown, no extra commentary.
 
         let windowTitle = focusedWindowTitle(from: appElement) ?? appName
         let selectedText = selectedText(from: appElement)
+        // Local smart cleanup only needs lightweight metadata and spelling
+        // hints. Do not capture a screenshot (or prompt for Screen Recording)
+        // when no cloud context provider is configured.
+        if apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            let currentActivity = fallbackCurrentActivity(
+                appName: appName,
+                bundleIdentifier: bundleIdentifier,
+                selectedText: selectedText,
+                windowTitle: windowTitle,
+                screenshotAvailable: false
+            )
+            return AppContext(
+                appName: appName,
+                bundleIdentifier: bundleIdentifier,
+                windowTitle: windowTitle,
+                selectedText: selectedText,
+                currentActivity: currentActivity,
+                contextSystemPrompt: contextSystemPrompt,
+                contextPrompt: nil,
+                screenshotDataURL: nil,
+                screenshotMimeType: nil,
+                screenshotError: "Not captured for on-device cleanup"
+            )
+        }
         let screenshot = await captureActiveWindowScreenshot(
             processIdentifier: frontmostApp.processIdentifier,
             appElement: appElement,

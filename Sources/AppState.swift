@@ -606,6 +606,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingShortcutStartTask: Task<Void, Never>?
     private var pendingShortcutStartMode: RecordingTriggerMode?
     private var nativeStreamingSession: SpeechAnalyzerStreamingSession?
+    private var smartCleanupSessionID: UUID?
     private var automaticTerminationDisabled = false
     private var activeAudioInterruption: ActiveAudioInterruption?
     private var pendingOverlayDismissToken: UUID?
@@ -1204,9 +1205,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     context: restoredContext,
                     postProcessingService: postProcessingService,
                     customVocabulary: capturedCustomVocabulary,
+                    wordCorrections: self.wordCorrections,
                     customSystemPrompt: capturedCustomSystemPrompt,
+                    customContextPrompt: self.customContextPrompt,
                     outputLanguage: self.outputLanguage,
-                    preserveExactWording: self.preserveExactWording
+                    cleanupMode: self.smartCleanupMode
                 )
                 finalTranscript = result.finalTranscript
                 processingStatus = Self.statusMessage(
@@ -2216,6 +2219,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
 
         startNativeStreamingSession()
+        let cleanupSessionID = UUID()
+        smartCleanupSessionID = cleanupSessionID
+        if smartCleanupMode == .smart || currentSessionIntent.isCommandMode {
+            Task {
+                await AppleFoundationModelsPostProcessor.shared.prepare(
+                    sessionID: cleanupSessionID,
+                    editMode: currentSessionIntent.isCommandMode
+                )
+            }
+        }
 
         // Start engine on background thread so UI isn't blocked
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
@@ -2451,13 +2464,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private enum TranscriptProcessingOutcome {
         case skippedEmptyRawTranscript
-        case skippedNoAPIKey
         case voiceMacro(command: String)
-        case postProcessingSucceeded
-        case postProcessingFailedFallback
+        case deterministicCleanup
+        case smartCleanupSucceeded(elapsed: TimeInterval)
+        case smartCleanupFallback(reason: String)
+        case cloudCleanupSucceeded
         case preservedExactWording
-        case preservedExactWordingTranslated
-        case preservedExactWordingTranslationFailedFallback
         case commandModeSucceeded(invocation: CommandInvocation)
         case commandModeFailedFallback(invocation: CommandInvocation)
 
@@ -2465,22 +2477,19 @@ final class AppState: ObservableObject, @unchecked Sendable {
             switch self {
             case .skippedEmptyRawTranscript:
                 return "Skipped macros and post-processing for empty raw transcript"
-            case .skippedNoAPIKey:
-                return "Used the raw on-device transcript"
             case .voiceMacro(let command):
                 return "Voice macro used: \(command)"
-            case .postProcessingSucceeded:
-                return isRetry ? "Post-processing succeeded (retried)" : "Post-processing succeeded"
-            case .postProcessingFailedFallback:
-                return isRetry
-                    ? "Post-processing failed on retry, using raw transcript"
-                    : "Post-processing failed, using raw transcript"
+            case .deterministicCleanup:
+                return "Basic on-device cleanup used"
+            case .smartCleanupSucceeded(let elapsed):
+                let timing = String(format: "%.2fs", elapsed)
+                return isRetry ? "Smart on-device cleanup succeeded (retried, \(timing))" : "Smart on-device cleanup succeeded (\(timing))"
+            case .smartCleanupFallback(let reason):
+                return "Smart cleanup unavailable; basic cleanup used (\(reason))"
+            case .cloudCleanupSucceeded:
+                return "Cloud cleanup fallback succeeded"
             case .preservedExactWording:
                 return "Preserved exact wording, skipped post-processing"
-            case .preservedExactWordingTranslated:
-                return "Preserved exact wording, translated to output language"
-            case .preservedExactWordingTranslationFailedFallback:
-                return "Verbatim translation failed, using untranslated raw transcript"
             case .commandModeSucceeded(let invocation):
                 return "Edit mode succeeded (\(invocation.rawValue))"
             case .commandModeFailedFallback(let invocation):
@@ -2495,9 +2504,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         context: AppContext,
         postProcessingService: PostProcessingService,
         customVocabulary: String,
+        wordCorrections: String,
         customSystemPrompt: String,
+        customContextPrompt: String,
         outputLanguage: String = "",
-        preserveExactWording: Bool
+        cleanupMode: SmartCleanupMode,
+        smartSessionID: UUID? = nil
     ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
         let trimmedRawTranscript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
@@ -2505,24 +2517,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return ("", .skippedEmptyRawTranscript, "")
         }
 
-        // The LLM key is optional: without one, skip the doomed network
-        // round-trips and use the on-device transcript (or the untouched
-        // selection for Edit Mode) directly.
-        let llmKeyMissing = apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let vocabulary = customVocabulary
+            .split { $0 == "," || $0.isNewline }
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        let corrections = TranscriptTidier.CorrectionMapping.parse(wordCorrections)
 
         if case .command(let invocation, let selectedText) = intent {
-            if llmKeyMissing {
-                return (selectedText, .commandModeFailedFallback(invocation: invocation), "")
-            }
             do {
-                let result = try await postProcessingService.commandTransform(
+                let result = try await AppleFoundationModelsPostProcessor.shared.transformSelection(
                     selectedText: selectedText,
-                    voiceCommand: rawTranscript,
-                    context: context,
-                    customVocabulary: customVocabulary,
-                    outputLanguage: outputLanguage
+                    command: rawTranscript,
+                    appName: context.appName,
+                    vocabulary: vocabulary,
+                    sessionID: smartSessionID,
+                    timeout: 4
                 )
-                return (result.transcript, .commandModeSucceeded(invocation: invocation), result.prompt)
+                return (result.text, .commandModeSucceeded(invocation: invocation), result.prompt)
             } catch {
                 os_log(.error, log: recordingLog, "Edit mode failed: %{public}@", error.localizedDescription)
                 return (selectedText, .commandModeFailedFallback(invocation: invocation), "")
@@ -2534,52 +2545,55 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return (macro.payload, .voiceMacro(command: macro.command), "")
         }
 
-        // Preserve-exact-wording mode. Two sub-cases so translation
-        // stays honored:
-        //
-        //   1. No Output Language set — skip the LLM entirely and
-        //      return the raw transcript verbatim.
-        //   2. Output Language IS set — route through a stripped-down
-        //      translate-only prompt. The user asked for another
-        //      language; silently dropping translation defeats their
-        //      settings. The translate-only path preserves filler,
-        //      informal wording, and profanity 1:1 while still hitting
-        //      the target language.
-        if preserveExactWording {
-            let targetLanguage = outputLanguage.trimmingCharacters(in: .whitespacesAndNewlines)
-            if targetLanguage.isEmpty || llmKeyMissing {
-                return (trimmedRawTranscript, .preservedExactWording, "")
-            }
-            do {
-                let result = try await postProcessingService.translateVerbatim(
-                    transcript: trimmedRawTranscript,
-                    targetLanguage: targetLanguage
-                )
-                return (result.transcript, .preservedExactWordingTranslated, result.prompt)
-            } catch {
-                os_log(.error, log: recordingLog,
-                       "Verbatim translation failed: %{public}@",
-                       error.localizedDescription)
-                return (trimmedRawTranscript, .preservedExactWordingTranslationFailedFallback, "")
-            }
+        if cleanupMode == .exact {
+            return (trimmedRawTranscript, .preservedExactWording, "")
         }
 
-        if llmKeyMissing {
-            return (trimmedRawTranscript, .skippedNoAPIKey, "")
+        let deterministic = TranscriptTidier.tidy(trimmedRawTranscript, corrections: corrections)
+        let safeFallback = deterministic.isEmpty ? trimmedRawTranscript : deterministic
+        if cleanupMode == .basic {
+            return (safeFallback, .deterministicCleanup, "")
         }
 
         do {
-            let result = try await postProcessingService.postProcess(
+            let request = SmartCleanupRequest(
                 transcript: trimmedRawTranscript,
-                context: context,
-                customVocabulary: customVocabulary,
-                customSystemPrompt: customSystemPrompt,
-                outputLanguage: outputLanguage
+                appName: context.appName,
+                windowTitle: context.windowTitle,
+                vocabulary: vocabulary,
+                corrections: corrections.map {
+                    SmartCleanupRequest.Correction(heard: $0.spoken, written: $0.replacement)
+                },
+                outputLanguage: outputLanguage,
+                customInstructions: [customSystemPrompt, customContextPrompt]
+                    .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                    .joined(separator: "\n")
             )
-            return (result.transcript, .postProcessingSucceeded, result.prompt)
+            let result = try await AppleFoundationModelsPostProcessor.shared.cleanup(
+                request,
+                sessionID: smartSessionID,
+                timeout: trimmedRawTranscript.count > 500 ? 4 : 2.5
+            )
+            return (result.text, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt)
         } catch {
-            os_log(.error, log: recordingLog, "Post-processing failed: %{public}@", error.localizedDescription)
-            return (trimmedRawTranscript, .postProcessingFailedFallback, "")
+            os_log(.error, log: recordingLog, "On-device smart cleanup failed: %{public}@", error.localizedDescription)
+            // Preserve the dormant cloud provider as an upgrade fallback for
+            // people who previously configured it, without requiring it.
+            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                do {
+                    let cloud = try await postProcessingService.postProcess(
+                        transcript: trimmedRawTranscript,
+                        context: context,
+                        customVocabulary: customVocabulary,
+                        customSystemPrompt: customSystemPrompt,
+                        outputLanguage: outputLanguage
+                    )
+                    return (cloud.transcript, .cloudCleanupSucceeded, cloud.prompt)
+                } catch {
+                    os_log(.error, log: recordingLog, "Cloud cleanup fallback failed: %{public}@", error.localizedDescription)
+                }
+            }
+            return (safeFallback, .smartCleanupFallback(reason: error.localizedDescription), "")
         }
     }
 
@@ -2620,6 +2634,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         shortcutSessionController.reset()
         activeRecordingTriggerMode = nil
         let sessionIntent = currentSessionIntent
+        let cleanupSessionID = smartCleanupSessionID
+        smartCleanupSessionID = nil
         currentSessionIntent = .dictation
         audioRecorder.onRecordingReady = nil
         audioRecorder.onRecordingFailure = nil
@@ -2739,9 +2755,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         context: appContext,
                         postProcessingService: postProcessingService,
                         customVocabulary: self.customVocabulary,
+                        wordCorrections: self.wordCorrections,
                         customSystemPrompt: self.customSystemPrompt,
+                        customContextPrompt: self.customContextPrompt,
                         outputLanguage: self.outputLanguage,
-                        preserveExactWording: self.preserveExactWording
+                        cleanupMode: self.smartCleanupMode,
+                        smartSessionID: cleanupSessionID
                     )
                     try Task.checkCancellation()
 
@@ -2788,8 +2807,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
                         let shouldPersistRawDictationFallback: Bool
                         switch result.outcome {
-                        case .postProcessingFailedFallback,
-                             .preservedExactWordingTranslationFailedFallback:
+                        case .smartCleanupFallback:
                             shouldPersistRawDictationFallback = !trimmedFinalTranscript.isEmpty
                         default:
                             shouldPersistRawDictationFallback = false
@@ -2953,6 +2971,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
         audioRecorder.onPCM16Samples = nil
         nativeStreamingSession?.cancel()
         nativeStreamingSession = nil
+        if let sessionID = smartCleanupSessionID {
+            smartCleanupSessionID = nil
+            Task { await AppleFoundationModelsPostProcessor.shared.cancel(sessionID: sessionID) }
+        }
     }
 
     private func startContextCapture() {

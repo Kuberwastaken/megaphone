@@ -64,23 +64,33 @@ struct TranscriptTidier {
     }
 
     static func apply(corrections: [CorrectionMapping], to transcript: String) -> String {
-        let ordered = corrections.sorted { $0.spoken.count > $1.spoken.count }
-        return ordered.reduce(transcript) { current, mapping in
-            let escaped = mapping.spoken
+        let ordered = corrections
+            .filter { !$0.spoken.isEmpty && !$0.replacement.isEmpty }
+            .sorted { $0.spoken.count > $1.spoken.count }
+        guard !ordered.isEmpty else { return transcript }
+
+        let alternatives = ordered.map { mapping in
+            mapping.spoken
                 .split(whereSeparator: { $0.isWhitespace })
                 .map { NSRegularExpression.escapedPattern(for: String($0)) }
                 .joined(separator: #"\s+"#)
-            guard let regex = try? NSRegularExpression(
-                pattern: #"(?<![\p{L}\p{M}\p{N}_])"# + escaped + #"(?![\p{L}\p{M}\p{N}_])"#,
-                options: [.caseInsensitive]
-            ) else { return current }
-            let range = NSRange(current.startIndex..<current.endIndex, in: current)
-            return regex.stringByReplacingMatches(
-                in: current,
-                range: range,
-                withTemplate: NSRegularExpression.escapedTemplate(for: mapping.replacement)
-            )
         }
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?<![\p{L}\p{M}\p{N}_])(?:"# + alternatives.joined(separator: "|") + #")(?![\p{L}\p{M}\p{N}_])"#,
+            options: [.caseInsensitive]
+        ) else { return transcript }
+
+        let result = NSMutableString(string: transcript)
+        let matches = regex.matches(in: transcript, range: NSRange(location: 0, length: result.length))
+        for match in matches.reversed() {
+            let heard = result.substring(with: match.range)
+            let normalizedHeard = heard.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+            guard let mapping = ordered.first(where: {
+                $0.spoken.compare(normalizedHeard, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
+            }) else { continue }
+            result.replaceCharacters(in: match.range, with: mapping.replacement)
+        }
+        return result as String
     }
 
     private static func removeFillers(from text: String) -> String {
