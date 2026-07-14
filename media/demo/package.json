@@ -1,0 +1,21 @@
+{
+  "name": "megaphone-intro",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "start": "remotion studio src/index.ts",
+    "render": "remotion render src/index.ts MegaphoneIntro out/megaphone-intro.mp4",
+    "render:gifs": "sh scripts/export-gifs.sh"
+  },
+  "dependencies": {
+    "@remotion/cli": "4.0.489",
+    "remotion": "4.0.489",
+    "react": "19.0.0",
+    "react-dom": "19.0.0"
+  },
+  "devDependencies": {
+    "@types/react": "19.0.0",
+    "@types/react-dom": "19.0.0",
+    "typescript": "5.7.3"
+  }
+}
