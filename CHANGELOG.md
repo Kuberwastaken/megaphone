@@ -10,6 +10,28 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.1] - 2026-07-14
+
+### Added
+
+- Smart Cleanup powered by Apple's on-device Foundation Models framework. Megaphone prewarms a fresh private session while recording, then removes fillers, resolves self-corrections, and improves punctuation before pasting.
+- Basic Cleanup, an instant deterministic fallback that removes conservative filler and stutter patterns without a language model.
+- Explicit heard-to-written corrections such as `mega phone -> Megaphone`, applied to Basic Cleanup and supplied as required spellings to Smart Cleanup.
+- Restored on-device cleanup instructions and app-context hints, including user-defined trigger phrases and formatting preferences.
+- Restored Output Language and Edit Mode using the on-device model, with safe fallbacks when Apple Intelligence is unavailable.
+
+### Changed
+
+- Cleanup now has Smart, Basic, and Exact modes. Smart is the default; model errors, unsupported languages, timeouts, and unavailable Apple Intelligence fall back to Basic without blocking dictation.
+- Custom Vocabulary now steers SpeechAnalyzer recognition and smart cleanup spelling.
+- Local cleanup context uses active-app metadata without capturing screenshots or requesting Screen Recording permission.
+- Run Log reports which cleanup path ran and records Smart Cleanup latency or fallback reasons.
+
+### Fixed
+
+- Smart sessions are isolated per dictation and discarded on cancellation, preventing context from leaking between recordings.
+- Model output is rejected when it is empty, assistant-like, or unexpectedly expands the dictated text.
+
 ## [1.1.0] - 2026-07-14
 
 ### Changed

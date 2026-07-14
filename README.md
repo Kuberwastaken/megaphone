@@ -77,6 +77,8 @@ Releases *are* signed with a persistent certificate, so macOS permissions you gr
 * **Results as soon as you stop speaking** — Megaphone streams audio into the analyzer while you're talking, so most of the work is already done by the time you release the shortcut.
 * **Hold-to-talk or toggle mode** — hold `Fn` to dictate, or press `Command-Fn` to start and stop recording. Both shortcuts can be changed.
 * **Custom vocabulary** — add names, technical terms, and other jargon. Megaphone uses them to steer Apple's speech model toward your words.
+* **Smart on-device cleanup** — Apple's Foundation Models framework removes fillers, resolves self-corrections, and fixes punctuation without uploading your transcript. A deterministic Basic mode is always available as a fast fallback.
+* **Word corrections and trigger phrases** — teach Megaphone exact heard-to-written spellings or add cleanup instructions for context-sensitive formatting.
 * **Multiple languages** — choose any language supported by Apple's on-device model. Megaphone handles the required model downloads from Settings.
 * **Plenty of settings** — configure shortcuts, sounds, the recording overlay, clipboard behaviour, voice macros, prompts, and more.
 
@@ -108,7 +110,7 @@ Megaphone does not have a server.
 
 Transcription happens entirely on your Mac, and recorded audio never leaves your computer.
 
-That's the whole story — as of 1.0.3 there is no cloud configuration in the app at all. (FreeFlow's LLM cleanup layer is still in the codebase, dormant, waiting on a possible port to Apple's on-device Foundation Models.)
+Smart Cleanup also runs on-device through Apple's Foundation Models framework. If Apple Intelligence is disabled, unavailable, or still downloading, Megaphone automatically uses its deterministic Basic cleanup instead. Megaphone exposes no cloud configuration and requires no account or API key.
 
 ## Building from source
 

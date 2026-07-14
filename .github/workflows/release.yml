@@ -62,6 +62,9 @@ jobs:
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
 
+      - name: Run deterministic tests
+        run: make test
+
       - name: Install build tools
         run: brew install create-dmg fileicon
 

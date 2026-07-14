@@ -753,7 +753,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.outputLanguage = outputLanguage
         self.shortcutStartDelay = shortcutStartDelay
         self.preserveClipboard = preserveClipboard
-        self.preserveExactWording = preserveExactWording
+        self.preserveExactWording = smartCleanupMode == .exact
         self.keepDictationInClipboardHistory = keepDictationInClipboardHistory
         self.dictationAudioInterruptionEnabled = dictationAudioInterruptionEnabled
         self.isPressEnterVoiceCommandEnabled = isPressEnterVoiceCommandEnabled
@@ -1174,13 +1174,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             screenshotError: nil
         )
 
-        let postProcessingService = PostProcessingService(
-            apiKey: apiKey,
-            baseURL: apiBaseURL,
-            preferredModel: postProcessingModel,
-            preferredFallbackModel: postProcessingFallbackModel,
-            instructionExecutionGuardEnabled: instructionExecutionGuardEnabled
-        )
         let capturedCustomVocabulary = customVocabulary
         let capturedCustomSystemPrompt = customSystemPrompt
 
@@ -1203,7 +1196,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     parsedTranscript.transcript,
                     intent: restoredIntent,
                     context: restoredContext,
-                    postProcessingService: postProcessingService,
                     customVocabulary: capturedCustomVocabulary,
                     wordCorrections: self.wordCorrections,
                     customSystemPrompt: capturedCustomSystemPrompt,
@@ -2468,7 +2460,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case deterministicCleanup
         case smartCleanupSucceeded(elapsed: TimeInterval)
         case smartCleanupFallback(reason: String)
-        case cloudCleanupSucceeded
         case preservedExactWording
         case commandModeSucceeded(invocation: CommandInvocation)
         case commandModeFailedFallback(invocation: CommandInvocation)
@@ -2486,8 +2477,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return isRetry ? "Smart on-device cleanup succeeded (retried, \(timing))" : "Smart on-device cleanup succeeded (\(timing))"
             case .smartCleanupFallback(let reason):
                 return "Smart cleanup unavailable; basic cleanup used (\(reason))"
-            case .cloudCleanupSucceeded:
-                return "Cloud cleanup fallback succeeded"
             case .preservedExactWording:
                 return "Preserved exact wording, skipped post-processing"
             case .commandModeSucceeded(let invocation):
@@ -2502,7 +2491,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         _ rawTranscript: String,
         intent: SessionIntent,
         context: AppContext,
-        postProcessingService: PostProcessingService,
         customVocabulary: String,
         wordCorrections: String,
         customSystemPrompt: String,
@@ -2577,22 +2565,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return (result.text, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt)
         } catch {
             os_log(.error, log: recordingLog, "On-device smart cleanup failed: %{public}@", error.localizedDescription)
-            // Preserve the dormant cloud provider as an upgrade fallback for
-            // people who previously configured it, without requiring it.
-            if !apiKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                do {
-                    let cloud = try await postProcessingService.postProcess(
-                        transcript: trimmedRawTranscript,
-                        context: context,
-                        customVocabulary: customVocabulary,
-                        customSystemPrompt: customSystemPrompt,
-                        outputLanguage: outputLanguage
-                    )
-                    return (cloud.transcript, .cloudCleanupSucceeded, cloud.prompt)
-                } catch {
-                    os_log(.error, log: recordingLog, "Cloud cleanup fallback failed: %{public}@", error.localizedDescription)
-                }
-            }
             return (safeFallback, .smartCleanupFallback(reason: error.localizedDescription), "")
         }
     }
@@ -2687,14 +2659,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             self.statusText = "Transcribing..."
             self.debugStatusMessage = "Transcribing audio"
 
-        let postProcessingService = PostProcessingService(
-            apiKey: apiKey,
-            baseURL: apiBaseURL,
-            preferredModel: postProcessingModel,
-            preferredFallbackModel: postProcessingFallbackModel,
-            instructionExecutionGuardEnabled: instructionExecutionGuardEnabled
-        )
-
             let activeStreamingSession = self.nativeStreamingSession
             self.nativeStreamingSession = nil
             self.audioRecorder.onPCM16Samples = nil
@@ -2753,7 +2717,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         parsedTranscript.transcript,
                         intent: sessionIntent,
                         context: appContext,
-                        postProcessingService: postProcessingService,
                         customVocabulary: self.customVocabulary,
                         wordCorrections: self.wordCorrections,
                         customSystemPrompt: self.customSystemPrompt,
