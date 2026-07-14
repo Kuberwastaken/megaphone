@@ -1,8 +1,8 @@
 # Megaphone intro animation
 
-A 12-second, 1200×750 Remotion composition for the README demo. It shows the
-same compact top-of-screen recording overlay across Claude Code, Codex, and
-Obsidian, then types the cleaned result into each app.
+A three-second, 1200×780 Remotion composition for the README demo. It preserves
+the real Claude Code screen recording, easing in toward Megaphone when
+dictation begins and pulling back as the finished text appears.
 
 ```bash
 npm install
