@@ -321,6 +321,12 @@ struct GeneralSettingsView: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
 
+                    Text("SpeechAnalyzer transcribes while you talk. Megaphone prewarms Apple's on-device language model alongside it, then gives Smart Cleanup a brief moment to tidy the result. If Apple Intelligence is unavailable or slow, the instant Basic pass quietly takes over. Your voice and words stay on this Mac either way.")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: 430)
+
                     // GitHub card
                     VStack(spacing: 10) {
                         HStack(spacing: 8) {

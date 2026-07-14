@@ -6,7 +6,7 @@
 
 <p align="center">
   A free, open-source dictation app for macOS that runs <b>entirely on your Mac</b>,<br>
-  powered by Apple's new SpeechAnalyzer engine.
+  powered by Apple's SpeechAnalyzer and Foundation Models frameworks.
 </p>
 
 <p align="center">
@@ -82,6 +82,16 @@ Releases *are* signed with a persistent certificate, so macOS permissions you gr
 * **Multiple languages** — choose any language supported by Apple's on-device model. Megaphone handles the required model downloads from Settings.
 * **Plenty of settings** — configure shortcuts, sounds, the recording overlay, clipboard behaviour, voice macros, prompts, and more.
 
+## Why it feels fast
+
+There are two Apple models in the loop, but Megaphone does its best not to make you wait around for either of them.
+
+**SpeechAnalyzer** listens as you speak instead of starting after you let go of `Fn`. At the same time, Megaphone prewarms Apple's on-device **Foundation Models** language model. By the time you finish a sentence, transcription is mostly done and the cleanup model is already awake.
+
+Smart Cleanup gets the literal transcript and does the bits that need some judgement: dropping abandoned starts, understanding “Thursday — no, Wednesday,” preserving technical syntax, and leaving your actual meaning alone. Short dictations have a tight 2.5-second cleanup budget; longer ones get up to 4 seconds.
+
+There is also a small, deliberately boring cleanup engine built into Megaphone. It removes obvious `um`s, stutters, repeated words, and awkward spacing without asking a language model anything. It powers **Basic Cleanup**, and it is also the safety net when Apple Intelligence is switched off, still downloading, or simply takes too long. So Smart can be clever when it helps, while the deterministic pass makes sure dictation never gets held hostage by cleverness.
+
 ## The transcription engine
 
 SpeechAnalyzer is Apple's new speech-to-text API, introduced with macOS 26 and iOS 26. It appears to use the same underlying technology as Apple's system dictation, and it performs remarkably well.
@@ -111,6 +121,8 @@ Megaphone does not have a server.
 Transcription happens entirely on your Mac, and recorded audio never leaves your computer.
 
 Smart Cleanup also runs on-device through Apple's Foundation Models framework. If Apple Intelligence is disabled, unavailable, or still downloading, Megaphone automatically uses its deterministic Basic cleanup instead. Megaphone exposes no cloud configuration and requires no account or API key.
+
+The two stages have different jobs: SpeechAnalyzer turns audio into words, then Foundation Models tidies those words. The fallback tidier is ordinary code, not a third model. None of the three sends your audio or transcript to Megaphone, because there is nowhere to send it.
 
 ## Building from source
 
