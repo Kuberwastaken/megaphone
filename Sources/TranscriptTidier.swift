@@ -135,7 +135,9 @@ struct TranscriptTidier {
         // Removing a filler from between matching pause marks should remove
         // the empty pause too: "I, uh, think" -> "I think".
         result = result.replacingOccurrences(of: #",\s*,"#, with: " ", options: .regularExpression)
-        result = result.replacingOccurrences(of: #"[-–—]\s*[-–—]"#, with: " ", options: .regularExpression)
+        // ASCII `--` is common in URLs, flags, and source code. Only collapse
+        // paired typographic pause dashes left behind by filler removal.
+        result = result.replacingOccurrences(of: #"[–—]\s*[–—]"#, with: " ", options: .regularExpression)
         result = result.replacingOccurrences(of: #"\s+([,.;:!?])"#, with: "$1", options: .regularExpression)
         result = result.replacingOccurrences(of: #"([,.;:!?]){2,}"#, with: "$1", options: .regularExpression)
         result = result.replacingOccurrences(of: #"([,;:])\s*([.!?])"#, with: "$2", options: .regularExpression)
