@@ -7,6 +7,7 @@ struct AppContextServiceTests {
         testQwenReasoningOutputIsStripped()
         testNonStrippingModelPreservesExistingBehavior()
         TranscriptTidierTests.run()
+        DictionaryStoreTests.run()
         print("MegaphoneTests passed")
     }
 
