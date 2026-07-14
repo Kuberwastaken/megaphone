@@ -10,6 +10,14 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.0] - 2026-07-14
+
+### Changed
+
+- New app icon.
+- The menu bar icon is now hidden by default. Re-open the app (e.g. from Spotlight) to reach Settings, where it can be turned back on.
+- **Fully local:** the Prompts tab, Cleanup, Output Language, and Edit Mode settings are gone, along with the Edit Mode setup step and the "API key required to test" prompt harnesses. Edit Mode is disabled since it depended on the retired LLM layer. Dictation, voice macros, custom vocabulary, and everything else run entirely on-device.
+
 ## [1.0.3] - 2026-07-14
 
 ### Removed
