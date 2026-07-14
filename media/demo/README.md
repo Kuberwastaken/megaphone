@@ -1,9 +1,9 @@
 # Megaphone intro animation
 
-A production-cut, 1200×764 Remotion composition for the README demo. It uses a
-real high-resolution recording across Claude Code, Codex, Cursor CLI, and
-Google Docs. Manual app-switching pauses are removed, Claude Code gets the
-top-anchored Megaphone zoom, and the remaining scenes use restrained edits.
+A 1200×764 Remotion composition for the README demo. It preserves the complete
+high-resolution recording across Claude Code, Codex, Cursor CLI, and Google
+Docs—including the real virtual-desktop switches—and only adds a top-anchored
+zoom while Megaphone is active in Claude Code.
 
 ```bash
 npm install
