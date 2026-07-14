@@ -711,11 +711,15 @@ final class UpdateManager: ObservableObject {
 
         activeDownloadTask?.cancel()
         activeDownloadTask = Task {
-            await performUpdate(downloadURL: downloadURL, expectedSize: dmgAsset.size)
+            await performUpdate(
+                downloadURL: downloadURL,
+                expectedSize: dmgAsset.size,
+                expectedVersion: normalizedVersionString(from: release.tagName)
+            )
         }
     }
 
-    private func performUpdate(downloadURL: URL, expectedSize: Int) async {
+    private func performUpdate(downloadURL: URL, expectedSize: Int, expectedVersion: String) async {
         let fm = FileManager.default
         let tempDir = fm.temporaryDirectory.appendingPathComponent("megaphone-update-\(UUID().uuidString)")
 
@@ -738,6 +742,11 @@ final class UpdateManager: ObservableObject {
 
             let (asyncBytes, response) = try await URLSession.shared.bytes(for: request)
 
+            guard let httpResponse = response as? HTTPURLResponse,
+                  (200..<300).contains(httpResponse.statusCode) else {
+                throw URLError(.badServerResponse)
+            }
+
             let totalSize = (response as? HTTPURLResponse)
                 .flatMap { Int($0.value(forHTTPHeaderField: "Content-Length") ?? "") }
                 ?? expectedSize
@@ -750,6 +759,7 @@ final class UpdateManager: ObservableObject {
             // Run the byte-iteration and file I/O off the main thread
             let mgr = self
             let downloadTask = Task.detached {
+                defer { try? outputHandle.close() }
                 var receivedBytes = 0
                 let bufferSize = 65_536
                 var buffer = Data()
@@ -781,10 +791,15 @@ final class UpdateManager: ObservableObject {
                     outputHandle.write(buffer)
                     receivedBytes += buffer.count
                 }
-                try outputHandle.close()
+                return receivedBytes
             }
 
-            try await downloadTask.value
+            let receivedBytes = try await downloadTask.value
+            if expectedSize > 0 && receivedBytes != expectedSize {
+                throw NSError(domain: "UpdateManager", code: 4, userInfo: [
+                    NSLocalizedDescriptionKey: "Downloaded update size did not match the release asset"
+                ])
+            }
             downloadProgress = 1.0
 
         } catch is CancellationError {
@@ -830,15 +845,34 @@ final class UpdateManager: ObservableObject {
             // Copy app to staging directory
             let stagingDir = fm.temporaryDirectory.appendingPathComponent("megaphone-staged-\(UUID().uuidString)")
             try fm.createDirectory(at: stagingDir, withIntermediateDirectories: true)
-            let stagedApp = stagingDir.appendingPathComponent(appBundle.lastPathComponent)
-            try fm.copyItem(at: appBundle, to: stagedApp)
+            do {
+                let stagedApp = stagingDir.appendingPathComponent(appBundle.lastPathComponent)
+                try fm.copyItem(at: appBundle, to: stagedApp)
 
-            // Clean up DMG (detach happens in defer above, delete temp dir)
-            try? fm.removeItem(at: tempDir)
+                try await Task.detached {
+                    try self.validateStagedApp(
+                        stagedApp,
+                        currentApp: Bundle.main.bundleURL,
+                        expectedVersion: expectedVersion
+                    )
+                }.value
 
-            // MARK: Replace & relaunch
-            updateStatus = .readyToRelaunch
-            replaceAndRelaunch(stagedApp: stagedApp, stagingDir: stagingDir)
+                // Clean up DMG (detach happens in defer above, delete temp dir)
+                try? fm.removeItem(at: tempDir)
+
+                // MARK: Replace & relaunch
+                updateStatus = .readyToRelaunch
+                try replaceAndRelaunch(
+                    stagedApp: stagedApp,
+                    stagingDir: stagingDir,
+                    expectedVersion: expectedVersion
+                )
+            } catch {
+                // Once the helper launches it owns this directory. Before then,
+                // validation and launch failures should not leave staged apps behind.
+                try? fm.removeItem(at: stagingDir)
+                throw error
+            }
 
         } catch {
             updateStatus = .error("Install failed: \(error.localizedDescription)")
@@ -886,18 +920,114 @@ final class UpdateManager: ObservableObject {
         ])
     }
 
-    private func replaceAndRelaunch(stagedApp: URL, stagingDir: URL) {
-        let currentAppPath = Bundle.main.bundlePath
-        let pid = String(ProcessInfo.processInfo.processIdentifier)
-        let backupPath = currentAppPath + ".bak"
+    nonisolated private func validateStagedApp(
+        _ stagedApp: URL,
+        currentApp: URL,
+        expectedVersion: String
+    ) throws {
+        guard let info = NSDictionary(contentsOf: stagedApp.appendingPathComponent("Contents/Info.plist")),
+              info["CFBundleIdentifier"] as? String == "com.kuberwastaken.megaphone",
+              info["CFBundleShortVersionString"] as? String == expectedVersion else {
+            throw NSError(domain: "UpdateManager", code: 5, userInfo: [
+                NSLocalizedDescriptionKey: "The downloaded app has an unexpected identity or version"
+            ])
+        }
 
-        // Use an argument array instead of string interpolation into a shell
-        // script to avoid injection. Move old app to backup first so a failed
-        // mv doesn't leave the user with no app.
+        let verify = Process()
+        verify.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        verify.arguments = ["--verify", "--deep", "--strict", stagedApp.path]
+        verify.standardOutput = Pipe()
+        verify.standardError = Pipe()
+        try verify.run()
+        verify.waitUntilExit()
+        guard verify.terminationStatus == 0 else {
+            throw NSError(domain: "UpdateManager", code: 6, userInfo: [
+                NSLocalizedDescriptionKey: "The downloaded app failed code-signature verification"
+            ])
+        }
+
+        guard try designatedRequirement(of: stagedApp) == designatedRequirement(of: currentApp) else {
+            throw NSError(domain: "UpdateManager", code: 7, userInfo: [
+                NSLocalizedDescriptionKey: "The downloaded app was not signed by the expected publisher"
+            ])
+        }
+    }
+
+    nonisolated private func designatedRequirement(of app: URL) throws -> String {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        process.arguments = ["-d", "-r-", app.path]
+        let errorPipe = Pipe()
+        process.standardOutput = Pipe()
+        process.standardError = errorPipe
+        try process.run()
+        process.waitUntilExit()
+
+        let output = String(
+            data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
+            encoding: .utf8
+        ) ?? ""
+        guard process.terminationStatus == 0,
+              let requirement = output.components(separatedBy: .newlines)
+                .first(where: { $0.hasPrefix("designated => ") }) else {
+            throw NSError(domain: "UpdateManager", code: 8, userInfo: [
+                NSLocalizedDescriptionKey: "Could not verify the app publisher"
+            ])
+        }
+        return requirement
+    }
+
+    private func replaceAndRelaunch(
+        stagedApp: URL,
+        stagingDir: URL,
+        expectedVersion: String
+    ) throws {
+        let currentAppPath = Bundle.main.bundlePath
+        let currentVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let pid = String(ProcessInfo.processInfo.processIdentifier)
+        let backupPath = stagingDir.appendingPathComponent("Megaphone Backup.app").path
+        let logsDirectory = FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Logs/Megaphone", isDirectory: true)
+        try FileManager.default.createDirectory(at: logsDirectory, withIntermediateDirectories: true)
+        let logPath = logsDirectory.appendingPathComponent("updater.log").path
+
+        // Keep the /Applications/Megaphone.app directory itself in place.
+        // macOS App Management may reject renaming/removing that directory,
+        // while allowing an updater to replace its children in place.
         let script = """
-        while kill -0 "$1" 2>/dev/null; do sleep 0.2; done
-        mv "$2" "$5" && mv "$3" "$2" && open "$2" && rm -rf "$4" "$5" \
-            || { mv "$5" "$2" 2>/dev/null; exit 1; }
+        exec >>"$7" 2>&1
+        echo "$(date -u +%FT%TZ) updater started: expected $6"
+        for ((attempt = 0; attempt < 150; attempt++)); do
+            kill -0 "$1" 2>/dev/null || break
+            sleep 0.2
+        done
+        kill -0 "$1" 2>/dev/null && { echo "timed out waiting for app to quit"; exit 1; }
+        /usr/bin/ditto "$2" "$5" \
+            && /usr/bin/codesign --verify --deep --strict "$5" \
+            || { echo "backup failed; leaving staged files at $4"; exit 1; }
+        if /usr/bin/find "$2" -mindepth 1 -delete \
+            && /usr/bin/ditto "$3" "$2" \
+            && /usr/bin/codesign --verify --deep --strict "$2" \
+            && test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$2/Contents/Info.plist")" = "$6"; then
+            echo "install verified; relaunching $6"
+            if /usr/bin/open "$2"; then
+                /bin/rm -rf "$4"
+                exit 0
+            fi
+            echo "relaunch failed; restoring previous app"
+        else
+            echo "install failed; restoring previous app"
+        fi
+        if /usr/bin/find "$2" -mindepth 1 -delete \
+            && /usr/bin/ditto "$5" "$2" \
+            && /usr/bin/codesign --verify --deep --strict "$2" \
+            && test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$2/Contents/Info.plist")" = "$8" \
+            && /usr/bin/open "$2"; then
+            echo "rollback verified; relaunched $8"
+            exit 1
+        fi
+        echo "CRITICAL: rollback failed; recovery files retained at $4"
+        exit 2
         """
 
         let process = Process()
@@ -907,10 +1037,13 @@ final class UpdateManager: ObservableObject {
                              currentAppPath,     // $2
                              stagedApp.path,      // $3
                              stagingDir.path,     // $4
-                             backupPath]          // $5
-        try? process.run()
+                             backupPath,          // $5
+                             expectedVersion,     // $6
+                             logPath,             // $7
+                             currentVersion]      // $8
+        try process.run()
 
-        // Quit the current app
+        // Quit only after the durable helper successfully launches.
         NSApp.terminate(nil)
     }
 }
