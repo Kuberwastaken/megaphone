@@ -10,6 +10,23 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.2] - 2026-07-14
+
+### Added
+
+- A personal Dictionary for names, products, acronyms, and technical terms, with manual entry, search, enable/disable controls, and exact heard-to-written corrections.
+- Conservative on-device learning that suggests unusual terms from successful dictations and activates them after three observations. Suggestions can be accepted, dismissed, disabled, or removed at any time.
+- Existing Custom Vocabulary entries migrate automatically into the Dictionary and continue steering both SpeechAnalyzer and Smart Cleanup.
+
+### Changed
+
+- The README demo now uses a real high-resolution recording across Claude Code, Codex, Cursor CLI, and Google Docs, with production cuts and a focused Megaphone overlay animation.
+
+### Fixed
+
+- In-app updates now work with macOS App Management, validate the downloaded publisher and version, retain a verified rollback copy, and write durable recovery logs.
+- Dictionary learning ignores failed cleanup, commands, macros, Exact mode, common prose, standalone numbers, and dismissed suggestions so recognition does not reinforce one-off mistakes.
+
 ## [1.1.1] - 2026-07-14
 
 ### Added
