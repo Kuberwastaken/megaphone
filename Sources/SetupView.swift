@@ -3,6 +3,7 @@ import AVFoundation
 import Combine
 import Foundation
 import ServiceManagement
+import FoundationModels
 
 struct SetupView: View {
     var onComplete: () -> Void
@@ -13,7 +14,7 @@ struct SetupView: View {
         case welcome = 0
         case micPermission
         case accessibility
-        case screenRecording
+        case appleIntelligence
         case holdShortcut
         case toggleShortcut
         case copyAgainShortcut
@@ -29,6 +30,11 @@ struct SetupView: View {
     @State private var accessibilityGranted = false
     @State private var accessibilityTimer: Timer?
     @State private var screenRecordingTimer: Timer?
+    @State private var foundationModelTimer: Timer?
+    @State private var foundationModelAvailability = SystemLanguageModel(
+        useCase: .general,
+        guardrails: .permissiveContentTransformations
+    ).availability
     @State private var customVocabularyInput: String = ""
     @StateObject private var githubCache = GitHubMetadataCache.shared
 
@@ -51,6 +57,7 @@ struct SetupView: View {
     @State private var isCapturingCopyAgainShortcut = false
     @StateObject private var testHotkeyHarness = SetupTestHotkeyHarness()
     @AppStorage("use_compact_overlay") private var useCompactOverlay = true
+    @AppStorage("apple_intelligence_setup_seen_v1") private var hasSeenAppleIntelligenceSetup = false
 
     private let totalSteps: [SetupStep] = SetupStep.allCases
     private var isCapturingShortcut: Bool {
@@ -115,8 +122,7 @@ struct SetupView: View {
                                     // pin a grant to a previous build (ad-hoc signing),
                                     // leaving the toggle ON while detection says no.
                                     // Never hard-block setup on that.
-                                    if (currentStep == .accessibility || currentStep == .screenRecording)
-                                        && !canContinueFromCurrentStep {
+                                    if currentStep == .accessibility && !canContinueFromCurrentStep {
                                         Button("Continue anyway") {
                                             withAnimation {
                                                 currentStep = nextStep(currentStep)
@@ -126,7 +132,7 @@ struct SetupView: View {
                                         .foregroundStyle(.secondary)
                                     }
 
-                                    Button("Continue") {
+                                    Button(continueButtonTitle) {
                                         withAnimation {
                                             currentStep = nextStep(currentStep)
                                         }
@@ -159,6 +165,7 @@ struct SetupView: View {
         .onDisappear {
             accessibilityTimer?.invalidate()
             screenRecordingTimer?.invalidate()
+            foundationModelTimer?.invalidate()
             appState.resumeHotkeyMonitoringAfterShortcutCapture()
         }
         .onChange(of: isCapturingShortcut) { isCapturing in
@@ -179,8 +186,8 @@ struct SetupView: View {
             micPermissionStep
         case .accessibility:
             accessibilityStep
-        case .screenRecording:
-            screenRecordingStep
+        case .appleIntelligence:
+            appleIntelligenceStep
         case .holdShortcut:
             holdShortcutStep
         case .toggleShortcut:
@@ -462,6 +469,65 @@ struct SetupView: View {
         }
         .onDisappear {
             screenRecordingTimer?.invalidate()
+        }
+    }
+
+    var appleIntelligenceStep: some View {
+        VStack(spacing: 20) {
+            Image(systemName: "apple.intelligence")
+                .font(.system(size: 60))
+                .foregroundStyle(foundationModelIsAvailable ? .green : .blue)
+
+            Text("Apple Intelligence")
+                .font(.title)
+                .fontWeight(.bold)
+
+            Text("Smart Cleanup uses Apple's on-device language model to remove fillers, resolve self-corrections, and polish punctuation without sending your words to a server.")
+                .multilineTextAlignment(.center)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Group {
+                switch foundationModelAvailability {
+                case .available:
+                    Label("Smart Cleanup is ready", systemImage: "checkmark.circle.fill")
+                        .foregroundStyle(.green)
+                case .unavailable(.appleIntelligenceNotEnabled):
+                    VStack(spacing: 10) {
+                        Label("Apple Intelligence is turned off", systemImage: "sparkles")
+                            .foregroundStyle(.orange)
+                        Button("Open Apple Intelligence Settings") {
+                            openAppleIntelligenceSettings()
+                        }
+                    }
+                case .unavailable(.modelNotReady):
+                    Label("The on-device model is downloading or preparing", systemImage: "arrow.down.circle")
+                        .foregroundStyle(.orange)
+                case .unavailable(.deviceNotEligible):
+                    Label("This Mac cannot run Apple Intelligence", systemImage: "desktopcomputer.trianglebadge.exclamationmark")
+                        .foregroundStyle(.orange)
+                case .unavailable:
+                    Label("Smart Cleanup is not currently available", systemImage: "exclamationmark.triangle")
+                        .foregroundStyle(.orange)
+                }
+            }
+            .font(.headline)
+
+            if !foundationModelIsAvailable {
+                Text("You can continue with Basic Cleanup. It runs instantly on-device, and Smart Cleanup will become available automatically when the model is ready.")
+                    .font(.callout)
+                    .multilineTextAlignment(.center)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .onAppear {
+            hasSeenAppleIntelligenceSetup = true
+            refreshFoundationModelAvailability()
+            startFoundationModelPolling()
+        }
+        .onDisappear {
+            foundationModelTimer?.invalidate()
         }
     }
 
@@ -865,13 +931,22 @@ struct SetupView: View {
             return micPermissionGranted
         case .accessibility:
             return accessibilityGranted
-        case .screenRecording:
-            return appState.hasScreenRecordingPermission
         case .testTranscription:
             return testPhase == .done && !testTranscript.isEmpty && testError == nil
         default:
             return true
         }
+    }
+
+    private var foundationModelIsAvailable: Bool {
+        if case .available = foundationModelAvailability { return true }
+        return false
+    }
+
+    private var continueButtonTitle: String {
+        currentStep == .appleIntelligence && !foundationModelIsAvailable
+            ? "Continue with Basic"
+            : "Continue"
     }
 
     private var testShortcutPrompt: String {
@@ -962,6 +1037,29 @@ struct SetupView: View {
             DispatchQueue.main.async {
                 appState.hasScreenRecordingPermission = CGPreflightScreenCaptureAccess()
             }
+        }
+    }
+
+    func refreshFoundationModelAvailability() {
+        foundationModelAvailability = SystemLanguageModel(
+            useCase: .general,
+            guardrails: .permissiveContentTransformations
+        ).availability
+    }
+
+    func startFoundationModelPolling() {
+        foundationModelTimer?.invalidate()
+        foundationModelTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { _ in
+            DispatchQueue.main.async {
+                refreshFoundationModelAvailability()
+            }
+        }
+    }
+
+    func openAppleIntelligenceSettings() {
+        let pane = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")!
+        if !NSWorkspace.shared.open(pane) {
+            NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
         }
     }
 

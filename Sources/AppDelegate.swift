@@ -1,4 +1,5 @@
 import SwiftUI
+import FoundationModels
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
@@ -33,8 +34,38 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if !AXIsProcessTrusted() {
                 appState.showAccessibilityAlert()
             }
+            showAppleIntelligenceReadinessIfNeeded()
         }
 
+    }
+
+    private func showAppleIntelligenceReadinessIfNeeded() {
+        let defaults = UserDefaults.standard
+        let seenKey = "apple_intelligence_setup_seen_v1"
+        guard !defaults.bool(forKey: seenKey), appState.smartCleanupMode == .smart else { return }
+
+        let model = SystemLanguageModel(
+            useCase: .general,
+            guardrails: .permissiveContentTransformations
+        )
+        guard case .unavailable(.appleIntelligenceNotEnabled) = model.availability else { return }
+        defaults.set(true, forKey: seenKey)
+
+        let alert = NSAlert()
+        alert.messageText = "Turn on Apple Intelligence for Smart Cleanup"
+        alert.informativeText = "Smart Cleanup runs Apple's language model entirely on your Mac. You can turn it on now, or use Megaphone's instant Basic Cleanup instead."
+        alert.addButton(withTitle: "Open Settings")
+        alert.addButton(withTitle: "Use Basic")
+        alert.addButton(withTitle: "Not Now")
+        let response = alert.runModal()
+        if response == .alertFirstButtonReturn {
+            let pane = URL(string: "x-apple.systempreferences:com.apple.Siri-Settings.extension")!
+            if !NSWorkspace.shared.open(pane) {
+                NSWorkspace.shared.open(URL(fileURLWithPath: "/System/Applications/System Settings.app"))
+            }
+        } else if response == .alertSecondButtonReturn {
+            appState.smartCleanupMode = .basic
+        }
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
