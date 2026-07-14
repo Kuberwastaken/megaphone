@@ -64,21 +64,31 @@ The accuracy is only part of what makes it useful:
 
 As far as I know, Megaphone is one of the first general-purpose dictation apps built entirely around it.
 
-## Quick start
+## Installing
 
-1. [Download Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg) and drag Megaphone into your Applications folder.
-2. Open the app and grant microphone and accessibility permissions.
-3. Optionally add a free [Groq](https://groq.com/) API key for AI cleanup and app-context features. This is never used for transcription.
-4. Hold `Fn` and start talking. The required Apple speech model will download automatically the first time you use it.
+1. [Download Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg).
+2. Read the section below, because macOS is about to call my app malware.
+3. Open the DMG and drag Megaphone into your Applications folder.
+4. Launch it, walk through setup, and grant the microphone and accessibility permissions.
+5. Hold `Fn` and start talking. Apple's speech model for your language downloads automatically the first time you use it.
 
-> [!NOTE]
-> Releases are not currently notarized by Apple, so macOS may say that it “could not verify Megaphone.dmg is free of malware.”
->
-> You can remove the quarantine flag before opening it:
->
-> `xattr -d com.apple.quarantine ~/Downloads/Megaphone.dmg`
->
-> You can also go to System Settings → Privacy & Security → *Open Anyway*, or avoid the warning by [building the app from source](#building-from-source).
+### I'm too broke for Apple's $99 developer license
+
+Getting macOS to *not* scream about an app requires notarization, and notarization requires a $99/year Apple Developer membership. Megaphone is a free app I built in one sleepless night, so for now: no license, no notarization, and a scary dialog claiming Apple “could not verify Megaphone.dmg is free of malware.”
+
+It's not malware. It's just unsigned-by-Apple. Every line of it is open source in this repo, so you can check for yourself — and then pick whichever of these you like:
+
+**Option 1 — one command.** Clear the quarantine flag before opening the DMG:
+
+```bash
+xattr -d com.apple.quarantine ~/Downloads/Megaphone.dmg
+```
+
+**Option 2 — clicking things.** Open the app once, dismiss the warning, then go to System Settings → Privacy & Security, scroll down, and hit **Open Anyway**.
+
+**Option 3 — trust no one.** [Build it from source](#building-from-source). Locally built apps skip the warning entirely.
+
+Releases *are* signed with a persistent certificate, so macOS permissions you grant survive updates — and if this app ever earns me $99 of goodwill, this whole section disappears.
 
 ## Privacy
 
@@ -86,7 +96,7 @@ Megaphone does not have a server.
 
 Transcription happens entirely on your Mac, and recorded audio never leaves your computer.
 
-When AI cleanup is enabled, Megaphone sends the text transcript—and, when needed, relevant app context—to whichever LLM provider you configured. You can point it at Ollama, LM Studio, or any other local OpenAI-compatible server to keep those features on-device as well.
+That's the whole story — as of 1.0.3 there is no cloud configuration in the app at all. (FreeFlow's LLM cleanup layer is still in the codebase, dormant, waiting on a possible port to Apple's on-device Foundation Models.)
 
 ## Building from source
 
