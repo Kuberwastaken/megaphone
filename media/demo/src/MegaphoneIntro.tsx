@@ -15,12 +15,12 @@ const zoomOutEnd = 70;
 export const MegaphoneIntro: React.FC = () => {
   const frame = useCurrentFrame();
 
-  const zoomIn = interpolate(frame, [2, zoomInEnd], [1, 1.26], {
+  const zoomIn = interpolate(frame, [2, zoomInEnd], [1, 1.5], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.out(Easing.cubic),
   });
-  const zoomOut = interpolate(frame, [zoomOutStart, zoomOutEnd], [1.26, 1], {
+  const zoomOut = interpolate(frame, [zoomOutStart, zoomOutEnd], [1.5, 1], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
     easing: Easing.inOut(Easing.cubic),
