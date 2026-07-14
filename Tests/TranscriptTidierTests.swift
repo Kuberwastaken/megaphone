@@ -61,6 +61,7 @@ enum TranscriptTidierTests {
         # Personal vocabulary
         mega phone -> Megaphone
         jason => JSON
+        cube air → Kuber
         bad line
          -> missing
         MEGA PHONE -> duplicate
@@ -68,7 +69,8 @@ enum TranscriptTidierTests {
         """)
         expectEqual(parsed, [
             .init(spoken: "mega phone", replacement: "Megaphone"),
-            .init(spoken: "jason", replacement: "JSON")
+            .init(spoken: "jason", replacement: "JSON"),
+            .init(spoken: "cube air", replacement: "Kuber")
         ])
     }
 

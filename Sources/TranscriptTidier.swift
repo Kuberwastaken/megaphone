@@ -25,6 +25,8 @@ struct TranscriptTidier {
                     separator = "->"
                 } else if line.contains("=>") {
                     separator = "=>"
+                } else if line.contains("→") {
+                    separator = "→"
                 } else {
                     return nil
                 }
