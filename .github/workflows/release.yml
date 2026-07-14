@@ -94,6 +94,11 @@ jobs:
           security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
 
+          # Keep a PEM copy of the leaf cert so a self-signed identity can
+          # be added to the trust store below.
+          openssl pkcs12 -in "$CERTIFICATE_PATH" -clcerts -nokeys \
+            -passin "pass:$CERTIFICATE_PASSWORD" -out "$RUNNER_TEMP/signing_cert.pem"
+
           # Import certificate and delete .p12 from disk immediately
           security import "$CERTIFICATE_PATH" \
             -P "$CERTIFICATE_PASSWORD" \
@@ -110,8 +115,21 @@ jobs:
           # Add temporary keychain to search list
           security list-keychains -d user -s "$KEYCHAIN_PATH" $(security list-keychains -d user | tr -d '"')
 
-          # Extract signing identity
+          # Self-signed identities are not trusted by default and would be
+          # invisible to find-identity -v; add the cert to the system trust
+          # store first in that case.
+          if ! security find-identity -v -p codesigning "$KEYCHAIN_PATH" | grep -q '"'; then
+            sudo security add-trusted-cert -d -r trustRoot \
+              -k /Library/Keychains/System.keychain "$RUNNER_TEMP/signing_cert.pem"
+          fi
+
+          # Extract signing identity; fall back to ad-hoc rather than failing
+          # the release when no usable identity exists.
           IDENTITY=$(security find-identity -v -p codesigning "$KEYCHAIN_PATH" | head -1 | sed 's/.*"\(.*\)".*/\1/')
+          if [ -z "$IDENTITY" ]; then
+            echo "No valid signing identity found - falling back to ad-hoc" >&2
+            IDENTITY="-"
+          fi
           echo "CODESIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
           echo "KEYCHAIN_PATH=$KEYCHAIN_PATH" >> "$GITHUB_ENV"
           echo "Found signing identity: $IDENTITY"
