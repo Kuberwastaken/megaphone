@@ -10,6 +10,17 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.0.2] - 2026-07-14
+
+### Removed
+
+- The API key step is gone from setup entirely — Megaphone works out of the box with on-device transcription. An LLM key for optional AI cleanup can still be added in Settings.
+
+### Fixed
+
+- The Accessibility setup step no longer hard-blocks: it explains that macOS can pin a permission grant to a previous version of the app (remove Megaphone from the Accessibility list and re-add it), and adds a "Continue anyway" escape hatch. Same for Screen Recording.
+- Releases are now signed with a persistent signing identity instead of ad-hoc, so macOS permission grants (Accessibility, Microphone, Screen Recording) survive app updates. One final re-grant is needed when updating to this version.
+
 ## [1.0.1] - 2026-07-14
 
 ### Fixed

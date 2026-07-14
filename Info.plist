@@ -9,9 +9,9 @@
     <key>CFBundleIdentifier</key>
     <string>com.kuberwastaken.megaphone</string>
     <key>CFBundleVersion</key>
-    <string>1.0.1</string>
+    <string>1.0.2</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.1</string>
+    <string>1.0.2</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleExecutable</key>
