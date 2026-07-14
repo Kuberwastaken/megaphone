@@ -6,7 +6,8 @@ struct AppContextServiceTests {
         testQwenRawOutputIsSummarized()
         testQwenReasoningOutputIsStripped()
         testNonStrippingModelPreservesExistingBehavior()
-        print("AppContextServiceTests passed")
+        TranscriptTidierTests.run()
+        print("MegaphoneTests passed")
     }
 
     private static func testQwenRawOutputIsSummarized() {
