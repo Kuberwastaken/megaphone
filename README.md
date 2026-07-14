@@ -16,6 +16,10 @@
 
 ---
 
+<p align="center">
+  <img src="Resources/demo.gif" alt="Megaphone demo" width="600">
+</p>
+
 Hold `Fn`, speak, and let go. Megaphone types the result into whatever app you're using.
 
 There’s no subscription, no transcription server, and no audio being sent off your Mac.
