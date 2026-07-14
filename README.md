@@ -30,11 +30,12 @@ Hold `Fn`, speak, and let go. Megaphone types the result into whatever app you'r
 
 ## One-line install
 
-Downloads the latest release, clears the [quarantine flag](#installing), installs to /Applications, and launches — all in one paste:
-
 ```bash
 curl -L -o /tmp/Megaphone.dmg https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg && xattr -c /tmp/Megaphone.dmg && hdiutil attach /tmp/Megaphone.dmg -nobrowse -mountpoint /tmp/megaphone-dmg -quiet && rm -rf /Applications/Megaphone.app && ditto /tmp/megaphone-dmg/Megaphone.app /Applications/Megaphone.app && hdiutil detach /tmp/megaphone-dmg -quiet && rm /tmp/Megaphone.dmg && open /Applications/Megaphone.app
 ```
+
+Downloads the latest release, clears the [quarantine flag](#installing-manual), installs to /Applications, and launches — all in one paste:
+
 
 ## Why I built this
 
@@ -48,10 +49,10 @@ That felt a little silly, so I built Megaphone.
 
 Megaphone is a fork of the excellent [FreeFlow](https://github.com/zachlatta/freeflow). I removed its cloud transcription stack and rebuilt that part of the app around Apple's SpeechAnalyzer.
 
-## Installing
+## Installing-Manual
 
 1. [Download Latest Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg).
-2. Read the section below, because macOS is about to call my app malware.
+2. Read the section below, because macOS is about to call this app malware.
 3. Open the DMG and drag Megaphone into your Applications folder.
 4. Launch it, walk through setup, and grant the microphone and accessibility permissions.
 5. Hold `Fn` and start talking. Apple's speech model for your language downloads automatically the first time you use it.
