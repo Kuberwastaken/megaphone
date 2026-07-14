@@ -15,7 +15,8 @@ enum TranscriptTidierTests {
     private static func testFillers() {
         let cases = [
             ("Um I think we should ship it.", "I think we should ship it."),
-            ("I, uh, think this works", "I, think this works"),
+            ("I, uh, think this works", "I think this works"),
+            ("I—uh—think this works", "I think this works"),
             ("uh uhm erm", ""),
             ("UH, hello", "hello"),
             ("That was yummy and the umbra moved.", "That was yummy and the umbra moved.")

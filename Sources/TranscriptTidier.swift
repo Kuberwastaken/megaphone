@@ -132,6 +132,10 @@ struct TranscriptTidier {
 
     private static func normalizePunctuationSpacing(_ text: String) -> String {
         var result = text
+        // Removing a filler from between matching pause marks should remove
+        // the empty pause too: "I, uh, think" -> "I think".
+        result = result.replacingOccurrences(of: #",\s*,"#, with: " ", options: .regularExpression)
+        result = result.replacingOccurrences(of: #"[-–—]\s*[-–—]"#, with: " ", options: .regularExpression)
         result = result.replacingOccurrences(of: #"\s+([,.;:!?])"#, with: "$1", options: .regularExpression)
         result = result.replacingOccurrences(of: #"([,.;:!?]){2,}"#, with: "$1", options: .regularExpression)
         result = result.replacingOccurrences(of: #"([,;:])\s*([.!?])"#, with: "$2", options: .regularExpression)

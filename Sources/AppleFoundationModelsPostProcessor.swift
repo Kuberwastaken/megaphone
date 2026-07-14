@@ -32,6 +32,8 @@ struct SmartCleanupRequest: Sendable {
     let transcript: String
     let appName: String?
     let windowTitle: String?
+    let selectedText: String?
+    let contextSummary: String
     let vocabulary: [String]
     let corrections: [Correction]
     let outputLanguage: String
@@ -169,27 +171,33 @@ actor AppleFoundationModelsPostProcessor {
         prompt: String,
         timeout: TimeInterval
     ) async throws -> String {
-        try await withCheckedThrowingContinuation { continuation in
-            let race = SmartResponseRace(continuation: continuation)
-            race.responseTask = Task {
-                do {
-                    let response = try await session.respond(
-                        to: prompt,
-                        options: GenerationOptions(temperature: 0)
-                    )
-                    race.finish(.success(response.content))
-                } catch {
-                    race.finish(.failure(error))
+        let cancellation = SmartCancellationRelay()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { continuation in
+                let race = SmartResponseRace(continuation: continuation)
+                race.responseTask = Task {
+                    do {
+                        let response = try await session.respond(
+                            to: prompt,
+                            options: GenerationOptions(temperature: 0)
+                        )
+                        race.finish(.success(response.content))
+                    } catch {
+                        race.finish(.failure(error))
+                    }
                 }
-            }
-            race.timeoutTask = Task {
-                do {
-                    try await Task.sleep(for: .seconds(timeout))
-                    race.finish(.failure(SmartCleanupError.timedOut(timeout)))
-                } catch {
-                    // The response won and cancelled the timer.
+                race.timeoutTask = Task {
+                    do {
+                        try await Task.sleep(for: .seconds(timeout))
+                        race.finish(.failure(SmartCleanupError.timedOut(timeout)))
+                    } catch {
+                        // The response won and cancelled the timer.
+                    }
                 }
+                cancellation.attach(race)
             }
+        } onCancel: {
+            cancellation.cancel()
         }
     }
 
@@ -200,6 +208,12 @@ actor AppleFoundationModelsPostProcessor {
         }
         if let title = request.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             hints.append("Window title (spelling/formatting hint only): \(title.prefix(160))")
+        }
+        if let selected = request.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty {
+            hints.append("Nearby selected text (spelling/tone hint only): \(selected.prefix(300))")
+        }
+        if !request.contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            hints.append("Local activity hint: \(request.contextSummary.prefix(240))")
         }
         if !request.vocabulary.isEmpty {
             hints.append("Preferred spellings: " + request.vocabulary.prefix(40).joined(separator: ", "))
@@ -237,6 +251,28 @@ actor AppleFoundationModelsPostProcessor {
         if !allowsExpansion && output.count > max(sourceCount * 2, sourceCount + 200) {
             throw SmartCleanupError.invalidOutput("unexpectedly expanded the transcript")
         }
+    }
+}
+
+private final class SmartCancellationRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private var race: SmartResponseRace?
+    private var cancelled = false
+
+    func attach(_ race: SmartResponseRace) {
+        lock.lock()
+        self.race = race
+        let shouldCancel = cancelled
+        lock.unlock()
+        if shouldCancel { race.finish(.failure(CancellationError())) }
+    }
+
+    func cancel() {
+        lock.lock()
+        cancelled = true
+        let race = race
+        lock.unlock()
+        race?.finish(.failure(CancellationError()))
     }
 }
 

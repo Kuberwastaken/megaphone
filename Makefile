@@ -72,14 +72,14 @@ endif
 test: $(TEST_RUNNER)
 	@$(TEST_RUNNER)
 
-$(TEST_RUNNER): Sources/AppContextService.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Tests/AppContextServiceTests.swift Tests/TranscriptTidierTests.swift
+$(TEST_RUNNER): Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Tests/AppContextServiceTests.swift Tests/TranscriptTidierTests.swift
 	@mkdir -p "$(BUILD_DIR)"
 	swiftc \
 		-parse-as-library \
 		-o "$(TEST_RUNNER)" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target $(ARCH)-apple-macosx26.0 \
-		Sources/AppContextService.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Tests/AppContextServiceTests.swift Tests/TranscriptTidierTests.swift
+		Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Tests/AppContextServiceTests.swift Tests/TranscriptTidierTests.swift
 
 icon: $(ICON_ICNS)
 

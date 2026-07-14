@@ -965,7 +965,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
         contextScreenshotMaxDimension: Int
     ) -> AppContextService {
         AppContextService(
-            apiKey: apiKey,
+            // Megaphone 1.1.1 is local-only. Ignore credentials retained from
+            // older FreeFlow/Megaphone installs so an upgrade can never
+            // silently reactivate screenshot or cloud context inference.
+            apiKey: "",
             baseURL: baseURL,
             customContextPrompt: customContextPrompt,
             contextModel: contextModel,
@@ -2548,6 +2551,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 transcript: trimmedRawTranscript,
                 appName: context.appName,
                 windowTitle: context.windowTitle,
+                selectedText: context.selectedText,
+                contextSummary: context.contextSummary,
                 vocabulary: vocabulary,
                 corrections: corrections.map {
                     SmartCleanupRequest.Correction(heard: $0.spoken, written: $0.replacement)
