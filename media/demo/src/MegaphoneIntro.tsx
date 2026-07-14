@@ -8,7 +8,7 @@ import {
   useCurrentFrame,
 } from 'remotion';
 
-const zoomInEnd = 13;
+const zoomInEnd = 18;
 const zoomOutStart = 49;
 const zoomOutEnd = 70;
 
@@ -18,7 +18,7 @@ export const MegaphoneIntro: React.FC = () => {
   const zoomIn = interpolate(frame, [2, zoomInEnd], [1, 1.5], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'clamp',
-    easing: Easing.out(Easing.cubic),
+    easing: Easing.inOut(Easing.cubic),
   });
   const zoomOut = interpolate(frame, [zoomOutStart, zoomOutEnd], [1.5, 1], {
     extrapolateLeft: 'clamp',
