@@ -10,6 +10,12 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.0.3] - 2026-07-14
+
+### Removed
+
+- The API key and provider configuration UI is gone from Settings — Megaphone is now fully on-device end to end, with no cloud option surfaced anywhere. (The LLM cleanup layer remains dormant in the codebase for a possible on-device Apple Foundation Models port.)
+
 ## [1.0.2] - 2026-07-14
 
 ### Removed
