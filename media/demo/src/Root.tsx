@@ -8,7 +8,7 @@ export const RemotionRoot: React.FC = () => (
     component={MegaphoneIntro}
     durationInFrames={demoDuration}
     fps={30}
-    width={1200}
+    width={1176}
     height={764}
   />
 );

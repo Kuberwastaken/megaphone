@@ -14,5 +14,5 @@ render_gif() {
     -loop 0 "$output"
 }
 
-render_gif 1200 764 ../../Resources/demo.gif
-render_gif 600 382 ../../website/assets/demo.gif
+render_gif 1176 764 ../../Resources/demo.gif
+render_gif 588 382 ../../website/assets/demo.gif
