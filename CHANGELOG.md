@@ -19,13 +19,16 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - Explicit heard-to-written corrections such as `mega phone -> Megaphone`, applied to Basic Cleanup and supplied as required spellings to Smart Cleanup.
 - Restored on-device cleanup instructions and app-context hints, including user-defined trigger phrases and formatting preferences.
 - Restored Output Language and Edit Mode using the on-device model, with safe fallbacks when Apple Intelligence is unavailable.
+- Added a non-blocking Apple Intelligence readiness step for new installs and a one-time upgrade prompt when Smart Cleanup is selected but Apple Intelligence is disabled. Users can open System Settings or continue with Basic Cleanup.
 
 ### Changed
 
 - Cleanup now has Smart, Basic, and Exact modes. Smart is the default; model errors, unsupported languages, timeouts, and unavailable Apple Intelligence fall back to Basic without blocking dictation.
 - Custom Vocabulary now steers SpeechAnalyzer recognition and smart cleanup spelling.
 - Local cleanup context uses active-app metadata without capturing screenshots or requesting Screen Recording permission.
+- Fresh setup no longer asks for obsolete Screen Recording permission.
 - Run Log reports which cleanup path ran and records Smart Cleanup latency or fallback reasons.
+- The Smart Cleanup prompt now preserves hedging and complete technical clauses while strictly resolving explicit self-corrections and refusing to execute dictated instructions.
 
 ### Fixed
 
