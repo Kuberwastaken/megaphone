@@ -76,9 +76,8 @@ Releases *are* signed with a persistent certificate, so macOS permissions you gr
 * **Fully on-device transcription** — Apple's speech model processes your audio directly on your Mac. There is no transcription API, API key, or internet connection required.
 * **Results as soon as you stop speaking** — Megaphone streams audio into the analyzer while you're talking, so most of the work is already done by the time you release the shortcut.
 * **Hold-to-talk or toggle mode** — hold `Fn` to dictate, or press `Command-Fn` to start and stop recording. Both shortcuts can be changed.
-* **Custom vocabulary** — add names, technical terms, and other jargon. Megaphone uses them to steer Apple's speech model toward your words.
 * **Smart on-device cleanup** — Apple's Foundation Models framework removes fillers, resolves self-corrections, and fixes punctuation without uploading your transcript. Setup checks whether Apple Intelligence is ready and can open its System Settings pane; a deterministic Basic mode is always available as a fast fallback.
-* **Word corrections and trigger phrases** — teach Megaphone exact heard-to-written spellings or add cleanup instructions for context-sensitive formatting.
+* **A personal Dictionary** — add names and technical terms yourself, or let Megaphone learn the words you use often. Exact corrections and trigger phrases handle the stubborn edge cases.
 * **Multiple languages** — choose any language supported by Apple's on-device model. Megaphone handles the required model downloads from Settings.
 * **Plenty of settings** — configure shortcuts, sounds, the recording overlay, clipboard behaviour, voice macros, prompts, and more.
 

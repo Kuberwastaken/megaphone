@@ -170,6 +170,8 @@ struct SettingsView: View {
                 switch appState.selectedSettingsTab {
                 case .general, .none:
                     GeneralSettingsView()
+                case .dictionary:
+                    DictionarySettingsView()
                 case .smartCleanup:
                     SmartCleanupSettingsView()
                 case .macros:
@@ -259,8 +261,6 @@ struct GeneralSettingsView: View {
     @AppStorage("overlay_display_id") private var overlayDisplayID = 0
     @AppStorage("use_compact_overlay") private var useCompactOverlay = true
     @State private var screensVersion = 0
-    @State private var customVocabularyInput: String = ""
-    @FocusState private var customVocabularyFocused: Bool
     @State private var micPermissionGranted = false
     @State private var showMutedHint = false
     @State private var copiedBuildInfo = false
@@ -466,12 +466,6 @@ struct GeneralSettingsView: View {
                 SettingsCard("Sound Volume", icon: "speaker.wave.2.fill") {
                     soundVolumeSection
                 }
-                SettingsCard("Custom Vocabulary", icon: "text.book.closed.fill") {
-                    vocabularySection
-                }
-                SettingsCard("Word Corrections", icon: "arrow.left.arrow.right") {
-                    wordCorrectionsSection
-                }
                 SettingsCard("Permissions", icon: "lock.shield.fill") {
                     permissionsSection
                 }
@@ -482,13 +476,9 @@ struct GeneralSettingsView: View {
             .padding(24)
         }
         .onAppear {
-            customVocabularyInput = appState.customVocabulary
             checkMicPermission()
             appState.refreshLaunchAtLoginStatus()
             Task { await githubCache.fetchIfNeeded() }
-        }
-        .onDisappear {
-            commitCustomVocabulary()
         }
     }
 
@@ -1074,59 +1064,6 @@ struct GeneralSettingsView: View {
         }
     }
 
-    // MARK: Custom Vocabulary
-
-    private var wordCorrectionsSection: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Text("Teach cleanup explicit replacements, one per line, using “heard → wanted”.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            TextEditor(text: $appState.wordCorrections)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 70, maxHeight: 130)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-
-            Text("Example: mega phone → Megaphone")
-                .font(.caption2)
-                .foregroundStyle(.tertiary)
-        }
-    }
-
-    private func commitCustomVocabulary() {
-        let trimmed = customVocabularyInput.trimmingCharacters(in: .whitespacesAndNewlines)
-        if appState.customVocabulary != trimmed {
-            appState.customVocabulary = trimmed
-        }
-    }
-
-    private var vocabularySection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Words and phrases to preserve during post-processing.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            TextEditor(text: $customVocabularyInput)
-                .font(.system(.body, design: .monospaced))
-                .frame(minHeight: 80, maxHeight: 140)
-                .focused($customVocabularyFocused)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
-                )
-                .onChange(of: customVocabularyFocused) { focused in
-                    if !focused { commitCustomVocabulary() }
-                }
-
-            Text("Separate entries with commas, new lines, or semicolons.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-        }
-    }
-
     // MARK: Permissions
 
     private var permissionsSection: some View {
@@ -1210,6 +1147,188 @@ struct MicrophoneOptionRow: View {
             )
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - Dictionary Settings
+
+struct DictionarySettingsView: View {
+    @EnvironmentObject private var appState: AppState
+    @StateObject private var store = DictionaryStore.shared
+    @State private var newTerm = ""
+    @State private var searchText = ""
+    @State private var addError: String?
+    @FocusState private var newTermFocused: Bool
+
+    private var suggestions: [DictionaryEntry] {
+        store.entries.filter { $0.status == .suggested }
+    }
+
+    private var savedEntries: [DictionaryEntry] {
+        store.entries.filter { $0.status == .active && matchesSearch($0) }
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                SettingsCard("Your Dictionary", icon: "text.book.closed.fill") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Teach Megaphone the names, products, acronyms, and technical terms that make your writing yours. Dictionary words give both transcription and Smart Cleanup the right spelling, and stay on this Mac.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+
+                        HStack(spacing: 8) {
+                            TextField("Add a name, term, or phrase", text: $newTerm)
+                                .textFieldStyle(.roundedBorder)
+                                .focused($newTermFocused)
+                                .onSubmit(addTerm)
+                            Button("Add", action: addTerm)
+                                .buttonStyle(.borderedProminent)
+                                .disabled(newTerm.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                        }
+
+                        if let addError {
+                            Text(addError)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                        }
+                    }
+                }
+
+                SettingsCard("Automatic Learning", icon: "sparkles") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Learn words I use often", isOn: $store.automaticLearningEnabled)
+                        Text("Megaphone notices likely names and uncommon terms over time. New words start as suggestions and become active after they appear in three successful dictations; you can add, dismiss, disable, or remove them at any time.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+
+                if !suggestions.isEmpty {
+                    SettingsCard("Suggestions", icon: "lightbulb.fill") {
+                        VStack(spacing: 0) {
+                            ForEach(Array(suggestions.enumerated()), id: \.element.id) { index, entry in
+                                if index > 0 { Divider() }
+                                dictionaryRow(entry, isSuggestion: true)
+                            }
+                        }
+                    }
+                }
+
+                SettingsCard("Saved Words", icon: "character.book.closed.fill") {
+                    VStack(alignment: .leading, spacing: 12) {
+                        HStack(spacing: 7) {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundStyle(.secondary)
+                            TextField("Search dictionary", text: $searchText)
+                                .textFieldStyle(.plain)
+                            if !searchText.isEmpty {
+                                Button { searchText = "" } label: {
+                                    Image(systemName: "xmark.circle.fill")
+                                        .foregroundStyle(.secondary)
+                                }
+                                .buttonStyle(.plain)
+                                .help("Clear search")
+                            }
+                        }
+                        .padding(.horizontal, 9)
+                        .padding(.vertical, 7)
+                        .background(Color(nsColor: .textBackgroundColor))
+                        .clipShape(RoundedRectangle(cornerRadius: 7))
+                        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.primary.opacity(0.1)))
+
+                        if savedEntries.isEmpty {
+                            ContentUnavailableView {
+                                Label(searchText.isEmpty ? "No saved words yet" : "No matching words", systemImage: "text.book.closed")
+                            } description: {
+                                Text(searchText.isEmpty ? "Add the words Megaphone should always get right." : "Try a different search.")
+                            }
+                            .frame(maxWidth: .infinity, minHeight: 130)
+                        } else {
+                            VStack(spacing: 0) {
+                                ForEach(Array(savedEntries.enumerated()), id: \.element.id) { index, entry in
+                                    if index > 0 { Divider() }
+                                    dictionaryRow(entry, isSuggestion: false)
+                                }
+                            }
+                        }
+                    }
+                }
+
+                SettingsCard("Exact Corrections", icon: "arrow.left.arrow.right") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("For words speech consistently hears the wrong way, add one replacement per line using “heard → wanted”.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                        TextEditor(text: $appState.wordCorrections)
+                            .font(.system(.body, design: .monospaced))
+                            .frame(minHeight: 70, maxHeight: 130)
+                            .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+                        Text("Example: mega phone → Megaphone")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
+                    }
+                }
+            }
+            .padding(24)
+        }
+    }
+
+    @ViewBuilder
+    private func dictionaryRow(_ entry: DictionaryEntry, isSuggestion: Bool) -> some View {
+        HStack(spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(entry.term)
+                    .font(.body.weight(.medium))
+                HStack(spacing: 5) {
+                    Text(entry.source == .manual ? "Added by you" : "Learned")
+                    if entry.source == .learned && entry.observationCount > 1 {
+                        Text("·")
+                        Text("Heard \(entry.observationCount) times")
+                    }
+                }
+                .font(.caption2)
+                .foregroundStyle(.secondary)
+            }
+            Spacer()
+            if isSuggestion {
+                Button("Dismiss") { store.dismissSuggestion(id: entry.id) }
+                    .buttonStyle(.borderless)
+                Button("Add") { store.acceptSuggestion(id: entry.id) }
+                    .buttonStyle(.borderedProminent)
+                    .controlSize(.small)
+            } else {
+                Toggle("", isOn: Binding(
+                    get: { entry.isEnabled },
+                    set: { store.setEnabled($0, for: entry.id) }
+                ))
+                .labelsHidden()
+                .help(entry.isEnabled ? "Stop using this word" : "Use this word")
+                Button(role: .destructive) { store.remove(id: entry.id) } label: {
+                    Image(systemName: "trash")
+                }
+                .buttonStyle(.borderless)
+                .help("Remove from Dictionary")
+            }
+        }
+        .padding(.vertical, 9)
+    }
+
+    private func addTerm() {
+        let term = newTerm.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !term.isEmpty else { return }
+        do {
+            try store.addManual(term)
+            newTerm = ""
+            addError = nil
+            newTermFocused = true
+        } catch {
+            addError = error.localizedDescription
+        }
+    }
+
+    private func matchesSearch(_ entry: DictionaryEntry) -> Bool {
+        searchText.isEmpty || entry.term.localizedCaseInsensitiveContains(searchText)
     }
 }
 
@@ -1520,10 +1639,10 @@ struct RunLogEntryView: View {
                         }
                     }
 
-                    // Custom vocabulary
+                    // Dictionary context captured for this run
                     if !item.customVocabulary.isEmpty {
                         VStack(alignment: .leading, spacing: 6) {
-                            Text("Custom Vocabulary")
+                            Text("Dictionary Context")
                                 .font(.caption.weight(.semibold))
                             FlowLayout(spacing: 4) {
                                 ForEach(parseVocabulary(item.customVocabulary), id: \.self) { word in

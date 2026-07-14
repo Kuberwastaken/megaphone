@@ -23,35 +23,13 @@ extension AppState {
             
         guard !wordsToAdd.isEmpty else { return nil }
         
-        // Parse current vocabulary list to avoid adding exact duplicates
-        let currentWordsList = self.customVocabulary
-            .split(whereSeparator: { $0 == "\n" || $0 == "," || $0 == ";" })
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-            
-        let currentWordsSet = Set(currentWordsList.map { $0.lowercased() })
-        
-        let newUniqueWords = wordsToAdd.filter { !currentWordsSet.contains($0.lowercased()) }
-        
-        guard !newUniqueWords.isEmpty else { return nil }
-        
-        let newWordsString = newUniqueWords.joined(separator: ", ")
-        
-        // Append unique words to existing vocabulary
-        // We trim the block as a whole to safely append, but not the individual words themselves
-        var currentVocab = self.customVocabulary.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !currentVocab.isEmpty {
-            if !currentVocab.hasSuffix(",") {
-                currentVocab += ","
+        var added: [String] = []
+        for word in wordsToAdd {
+            if (try? DictionaryStore.shared.addManual(word)) != nil {
+                added.append(word)
             }
-            currentVocab += "\n\(newWordsString)"
-        } else {
-            currentVocab = newWordsString
         }
-        
-        // Save back to the published state
-        self.customVocabulary = currentVocab
-        return newWordsString
+        guard !added.isEmpty else { return nil }
+        return added.joined(separator: ", ")
     }
 }
-

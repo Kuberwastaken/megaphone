@@ -180,7 +180,7 @@ struct MenuBarView: View {
 
             Divider()
 
-            Button("Paste Custom Word to Vocabulary") {
+            Button("Add Clipboard Word to Dictionary") {
                 if appState.pasteWordToVocabulary() != nil {
                     VocabularyNotificationManager.shared.flashCheckmark()
                 }

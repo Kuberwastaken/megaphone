@@ -38,6 +38,7 @@ enum SmartCleanupMode: String, CaseIterable, Identifiable {
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
+    case dictionary
     case smartCleanup
     case macros
     case runLog
@@ -54,6 +55,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return "General"
+        case .dictionary: return "Dictionary"
         case .smartCleanup: return "Smart Cleanup"
         case .macros: return "Voice Macros"
         case .runLog: return "Run Log"
@@ -64,6 +66,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .dictionary: return "text.book.closed"
         case .smartCleanup: return "sparkles"
         case .macros: return "music.mic"
         case .runLog: return "clock.arrow.circlepath"
@@ -368,7 +371,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var customVocabulary: String {
         didSet {
             UserDefaults.standard.set(customVocabulary, forKey: customVocabularyStorageKey)
+            for term in customVocabulary.split(whereSeparator: { $0 == "," || $0 == ";" || $0.isNewline }) {
+                _ = try? DictionaryStore.shared.addManual(String(term))
+            }
         }
+    }
+
+    private var dictionaryVocabulary: String {
+        DictionaryStore.shared.activeTermsText
     }
 
     @Published var wordCorrections: String {
@@ -1028,7 +1038,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         try await SpeechAnalyzerService.transcribe(
             fileURL: fileURL,
             localePreference: transcriptionLanguage,
-            vocabulary: customVocabulary
+            vocabulary: dictionaryVocabulary
         )
     }
 
@@ -1177,7 +1187,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             screenshotError: nil
         )
 
-        let capturedCustomVocabulary = customVocabulary
+        let capturedCustomVocabulary = dictionaryVocabulary
         let capturedCustomSystemPrompt = customSystemPrompt
 
         Task {
@@ -2722,7 +2732,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         parsedTranscript.transcript,
                         intent: sessionIntent,
                         context: appContext,
-                        customVocabulary: self.customVocabulary,
+                        customVocabulary: self.dictionaryVocabulary,
                         wordCorrections: self.wordCorrections,
                         customSystemPrompt: self.customSystemPrompt,
                         customContextPrompt: self.customContextPrompt,
@@ -2753,6 +2763,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         self.lastRawTranscript = trimmedRawTranscript
                         self.lastPostProcessedTranscript = trimmedFinalTranscript
                         self.lastPostProcessingStatus = processingStatus
+                        if case .dictation = sessionIntent {
+                            switch result.outcome {
+                            case .deterministicCleanup, .smartCleanupSucceeded:
+                                DictionaryStore.shared.observe(
+                                    candidateTerms: DictionaryTermLearner.candidates(from: trimmedFinalTranscript)
+                                )
+                            default:
+                                break
+                            }
+                        }
                         self.recordPipelineHistoryEntry(
                             rawTranscript: trimmedRawTranscript,
                             postProcessedTranscript: trimmedFinalTranscript,
@@ -2901,7 +2921,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 ?? "available (\(context.screenshotMimeType ?? "image"))",
             postProcessingStatus: processingStatus,
             debugStatus: debugStatusMessage,
-            customVocabulary: customVocabulary,
+            customVocabulary: dictionaryVocabulary,
             audioFileName: audioFileName,
             contextAppName: context.appName,
             contextBundleIdentifier: context.bundleIdentifier,
@@ -2926,7 +2946,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private func startNativeStreamingSession() {
         let session = SpeechAnalyzerStreamingSession(
             localePreference: transcriptionLanguage,
-            vocabulary: customVocabulary
+            vocabulary: dictionaryVocabulary
         )
         session.start()
         nativeStreamingSession = session

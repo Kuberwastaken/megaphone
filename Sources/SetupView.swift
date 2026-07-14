@@ -644,7 +644,7 @@ struct SetupView: View {
                 .font(.system(size: 60))
                 .foregroundStyle(.blue)
 
-            Text("Custom Vocabulary")
+            Text("Dictionary")
                 .font(.title)
                 .fontWeight(.bold)
 
@@ -654,7 +654,7 @@ struct SetupView: View {
                 .fixedSize(horizontal: false, vertical: true)
 
             VStack(alignment: .leading, spacing: 8) {
-                Text("Vocabulary")
+                Text("Names and terms")
                     .font(.headline)
 
                 TextEditor(text: $customVocabularyInput)
