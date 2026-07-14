@@ -20,8 +20,25 @@ struct PrecomputedMacro {
     let normalizedCommand: String
 }
 
+enum SmartCleanupMode: String, CaseIterable, Identifiable {
+    case smart
+    case basic
+    case exact
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .smart: return "Smart"
+        case .basic: return "Basic"
+        case .exact: return "Exact"
+        }
+    }
+}
+
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
+    case smartCleanup
     case macros
     case runLog
     case debug
@@ -37,6 +54,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: return "General"
+        case .smartCleanup: return "Smart Cleanup"
         case .macros: return "Voice Macros"
         case .runLog: return "Run Log"
         case .debug: return "Debug"
@@ -46,6 +64,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var icon: String {
         switch self {
         case .general: return "gearshape"
+        case .smartCleanup: return "sparkles"
         case .macros: return "music.mic"
         case .runLog: return "clock.arrow.circlepath"
         case .debug: return "wrench.and.screwdriver"
@@ -207,6 +226,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let savedToggleCustomShortcutStorageKey = "saved_toggle_custom_shortcut"
     private let savedCopyAgainCustomShortcutStorageKey = "saved_copy_again_custom_shortcut"
     private let customVocabularyStorageKey = "custom_vocabulary"
+    private let wordCorrectionsStorageKey = "word_corrections"
+    private let smartCleanupModeStorageKey = "smart_cleanup_mode"
     private let transcriptionLanguageStorageKey = "transcription_language"
     private let selectedMicrophoneStorageKey = "selected_microphone_id"
     private let customSystemPromptStorageKey = "custom_system_prompt"
@@ -347,6 +368,19 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var customVocabulary: String {
         didSet {
             UserDefaults.standard.set(customVocabulary, forKey: customVocabularyStorageKey)
+        }
+    }
+
+    @Published var wordCorrections: String {
+        didSet {
+            UserDefaults.standard.set(wordCorrections, forKey: wordCorrectionsStorageKey)
+        }
+    }
+
+    @Published var smartCleanupMode: SmartCleanupMode {
+        didSet {
+            UserDefaults.standard.set(smartCleanupMode.rawValue, forKey: smartCleanupModeStorageKey)
+            preserveExactWording = smartCleanupMode == .exact
         }
     }
 
@@ -609,6 +643,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             fallback: shortcuts.copyAgain.isCustom ? shortcuts.copyAgain : nil
         )
         let customVocabulary = UserDefaults.standard.string(forKey: customVocabularyStorageKey) ?? ""
+        let wordCorrections = UserDefaults.standard.string(forKey: wordCorrectionsStorageKey) ?? ""
         let transcriptionLanguage = Self.normalizeTranscriptionLanguage(
             UserDefaults.standard.string(forKey: transcriptionLanguageStorageKey) ?? ""
         )
@@ -627,9 +662,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
             : Self.defaultContextScreenshotMaxDimension
         let contextScreenshotMaxDimension = Self.normalizedContextScreenshotMaxDimension(storedContextScreenshotMaxDimension)
         let shortcutStartDelay = max(0, UserDefaults.standard.double(forKey: shortcutStartDelayStorageKey))
-        // Fully local: Edit Mode depends on the retired LLM layer, so it is
-        // force-disabled regardless of any previously stored preference.
-        let isCommandModeEnabled = false
+        let isCommandModeEnabled = UserDefaults.standard.object(forKey: commandModeEnabledStorageKey) == nil
+            ? false
+            : UserDefaults.standard.bool(forKey: commandModeEnabledStorageKey)
         let commandModeStyle = CommandModeStyle(
             rawValue: UserDefaults.standard.string(forKey: commandModeStyleStorageKey) ?? ""
         ) ?? .automatic
@@ -640,6 +675,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
             ? true
             : UserDefaults.standard.bool(forKey: preserveClipboardStorageKey)
         let preserveExactWording = UserDefaults.standard.bool(forKey: preserveExactWordingStorageKey)
+        let smartCleanupMode = SmartCleanupMode(
+            rawValue: UserDefaults.standard.string(forKey: smartCleanupModeStorageKey) ?? ""
+        ) ?? (preserveExactWording ? .exact : .smart)
         let keepDictationInClipboardHistory = UserDefaults.standard.bool(forKey: keepDictationInClipboardHistoryStorageKey)
         let dictationAudioInterruptionEnabled = UserDefaults.standard.bool(
             forKey: dictationAudioInterruptionEnabledStorageKey
@@ -702,6 +740,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.commandModeStyle = commandModeStyle
         self.commandModeManualModifier = commandModeManualModifier
         self.customVocabulary = customVocabulary
+        self.wordCorrections = wordCorrections
+        self.smartCleanupMode = smartCleanupMode
         self.transcriptionLanguage = transcriptionLanguage
         self.customSystemPrompt = customSystemPrompt
         self.customContextPrompt = customContextPrompt

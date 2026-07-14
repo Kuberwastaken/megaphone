@@ -169,6 +169,8 @@ struct SettingsView: View {
                 switch appState.selectedSettingsTab {
                 case .general, .none:
                     GeneralSettingsView()
+                case .smartCleanup:
+                    SmartCleanupSettingsView()
                 case .macros:
                     VoiceMacrosSettingsView()
                 case .runLog:
@@ -430,6 +432,12 @@ struct GeneralSettingsView: View {
                 SettingsCard("Transcription", icon: "waveform") {
                     OnDeviceTranscriptionSettings()
                 }
+                SettingsCard("Cleanup", icon: "sparkles") {
+                    cleanupSection
+                }
+                SettingsCard("Output Language", icon: "globe") {
+                    outputLanguageSection
+                }
                 SettingsCard("Dictation Shortcuts", icon: "keyboard.fill") {
                     hotkeySection
                 }
@@ -438,6 +446,9 @@ struct GeneralSettingsView: View {
                 }
                 SettingsCard("Recording Overlay", icon: "rectangle.dashed") {
                     overlaySection
+                }
+                SettingsCard("Edit Mode", icon: "pencil") {
+                    commandModeSection
                 }
                 SettingsCard("Clipboard", icon: "doc.on.clipboard") {
                     clipboardSection
@@ -450,6 +461,9 @@ struct GeneralSettingsView: View {
                 }
                 SettingsCard("Custom Vocabulary", icon: "text.book.closed.fill") {
                     vocabularySection
+                }
+                SettingsCard("Word Corrections", icon: "arrow.left.arrow.right") {
+                    wordCorrectionsSection
                 }
                 SettingsCard("Permissions", icon: "lock.shield.fill") {
                     permissionsSection
@@ -665,6 +679,62 @@ struct GeneralSettingsView: View {
 
     // MARK: Output Language
 
+    private static let outputLanguageOptions = [
+        "", "English", "Chinese (Simplified)", "Chinese (Traditional)",
+        "Spanish", "French", "Japanese", "Korean", "German", "Portuguese",
+        "Hindi", "Hinglish", "Gujarati", "Gujlish",
+    ]
+
+    private var outputLanguageSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Picker("Language", selection: $appState.outputLanguage) {
+                Text("Same as spoken").tag("")
+                ForEach(Self.outputLanguageOptions.dropFirst(), id: \.self) { language in
+                    Text(language).tag(language)
+                }
+            }
+            .pickerStyle(.menu)
+
+            Text("Smart cleanup translates the final text into this language. Exact mode preserves wording while translating literally.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    // MARK: Cleanup
+
+    private var cleanupSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Picker("Cleanup Mode", selection: $appState.smartCleanupMode) {
+                ForEach(SmartCleanupMode.allCases) { mode in
+                    Text(mode.title).tag(mode)
+                }
+            }
+            .pickerStyle(.segmented)
+
+            Text(cleanupModeDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            if appState.smartCleanupMode == .smart {
+                Label("Uses Apple's on-device language model when available, with Basic cleanup as a fast fallback.", systemImage: "lock.shield")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+    }
+
+    private var cleanupModeDescription: String {
+        switch appState.smartCleanupMode {
+        case .smart:
+            return "Removes fillers, resolves corrections, and improves punctuation using on-device intelligence."
+        case .basic:
+            return "Instant deterministic cleanup for fillers, stutters, repeated words, and spacing."
+        case .exact:
+            return "Preserves the words you spoke, with only the minimum formatting needed for insertion."
+        }
+    }
+
     // MARK: Dictation Shortcuts
 
     private var hotkeySection: some View {
@@ -780,6 +850,52 @@ struct GeneralSettingsView: View {
     }
 
     // MARK: Clipboard
+
+    private var commandModeSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle("Enable Edit Mode", isOn: Binding(
+                get: { appState.isCommandModeEnabled },
+                set: { _ = appState.setCommandModeEnabled($0) }
+            ))
+
+            Text("Transform highlighted text with a spoken instruction instead of dictating over it.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            Picker("Invocation Style", selection: Binding(
+                get: { appState.commandModeStyle },
+                set: { _ = appState.setCommandModeStyle($0) }
+            )) {
+                ForEach(CommandModeStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+            .disabled(!appState.isCommandModeEnabled)
+
+            if appState.commandModeStyle == .automatic {
+                Text("When text is selected, your normal dictation shortcut applies the spoken instruction to it.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else {
+                Picker("Extra Modifier", selection: Binding(
+                    get: { appState.commandModeManualModifier },
+                    set: { _ = appState.setCommandModeManualModifier($0) }
+                )) {
+                    ForEach(CommandModeManualModifier.allCases) { modifier in
+                        Text(modifier.title).tag(modifier)
+                    }
+                }
+                .disabled(!appState.isCommandModeEnabled)
+            }
+
+            if let message = appState.commandModeManualModifierValidationMessage {
+                Label(message, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
 
     private var clipboardSection: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -936,6 +1052,26 @@ struct GeneralSettingsView: View {
 
     // MARK: Custom Vocabulary
 
+    private var wordCorrectionsSection: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Teach cleanup explicit replacements, one per line, using “heard → wanted”.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            TextEditor(text: $appState.wordCorrections)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 70, maxHeight: 130)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(Color.secondary.opacity(0.3), lineWidth: 1)
+                )
+
+            Text("Example: mega phone → Megaphone")
+                .font(.caption2)
+                .foregroundStyle(.tertiary)
+        }
+    }
+
     private func commitCustomVocabulary() {
         let trimmed = customVocabularyInput.trimmingCharacters(in: .whitespacesAndNewlines)
         if appState.customVocabulary != trimmed {
@@ -1062,6 +1198,102 @@ struct MicrophoneOptionRow: View {
 }
 
 // MARK: - Prompts Settings
+
+// MARK: - Smart Cleanup Settings
+
+struct SmartCleanupSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var cleanupInstructions = ""
+    @State private var contextInstructions = ""
+    @FocusState private var cleanupFocused: Bool
+    @FocusState private var contextFocused: Bool
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 20) {
+                SettingsCard("Cleanup Instructions", icon: "text.bubble.fill") {
+                    promptEditor(
+                        text: $cleanupInstructions,
+                        focused: $cleanupFocused,
+                        description: "Tell Smart cleanup how you write. You can name trigger words, formatting preferences, or terms that must stay unchanged.",
+                        placeholder: "Example: When I say ‘action item’, format the following sentence as a checkbox.",
+                        onCommit: commitCleanupInstructions
+                    )
+                }
+                SettingsCard("App Context", icon: "macwindow") {
+                    promptEditor(
+                        text: $contextInstructions,
+                        focused: $contextFocused,
+                        description: "Optional hints for using the active app, window title, and selected text to choose the right wording. Context remains on this Mac.",
+                        placeholder: "Example: In Xcode, preserve Swift identifiers and Markdown backticks.",
+                        onCommit: commitContextInstructions
+                    )
+                }
+                SettingsCard("Safety", icon: "shield.lefthalf.filled") {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Toggle("Prevent dictated prompts from being executed", isOn: $appState.instructionExecutionGuardEnabled)
+                        Text("Treats dictated text as content to clean, never as a request for the model to answer.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .padding(24)
+        }
+        .onAppear {
+            cleanupInstructions = appState.customSystemPrompt
+            contextInstructions = appState.customContextPrompt
+        }
+        .onDisappear {
+            commitCleanupInstructions()
+            commitContextInstructions()
+        }
+    }
+
+    private func promptEditor(
+        text: Binding<String>, focused: FocusState<Bool>.Binding,
+        description: String, placeholder: String, onCommit: @escaping () -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(description).font(.caption).foregroundStyle(.secondary)
+            TextEditor(text: text)
+                .font(.system(.body, design: .monospaced))
+                .frame(minHeight: 100, maxHeight: 180)
+                .focused(focused)
+                .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3)))
+            if text.wrappedValue.isEmpty {
+                Text(placeholder).font(.caption2).foregroundStyle(.tertiary)
+            }
+            HStack {
+                Text(text.wrappedValue.isEmpty ? "Using the built-in defaults" : "Using custom instructions")
+                    .font(.caption).foregroundStyle(.secondary)
+                Spacer()
+                if !text.wrappedValue.isEmpty {
+                    Button("Reset") { text.wrappedValue = ""; onCommit() }.font(.caption)
+                }
+            }
+        }
+        .onChange(of: focused.wrappedValue) { isFocused in if !isFocused { onCommit() } }
+    }
+
+    private func commitCleanupInstructions() {
+        let value = cleanupInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value != appState.customSystemPrompt {
+            appState.customSystemPrompt = value
+            appState.customSystemPromptLastModified = value.isEmpty ? "" : iso8601DayFormatter.string(from: Date())
+        }
+    }
+
+    private func commitContextInstructions() {
+        let value = contextInstructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        if value != appState.customContextPrompt {
+            appState.customContextPrompt = value
+            appState.customContextPromptLastModified = value.isEmpty ? "" : iso8601DayFormatter.string(from: Date())
+        }
+    }
+}
+
+// MARK: - Run Log
 
 struct RunLogView: View {
     @EnvironmentObject var appState: AppState
