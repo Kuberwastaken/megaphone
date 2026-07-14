@@ -34,6 +34,7 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 
 - Smart sessions are isolated per dictation and discarded on cancellation, preventing context from leaking between recordings.
 - Model output is rejected when it is empty, assistant-like, or unexpectedly expands the dictated text.
+- In-app updates now replace the installed bundle safely under macOS App Management, verify the expected publisher and version, preserve a validated rollback copy, and keep a durable updater log when recovery is needed.
 
 ## [1.1.0] - 2026-07-14
 
