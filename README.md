@@ -36,6 +36,28 @@ That felt a little silly, so I built Megaphone.
 
 Megaphone is a fork of the excellent [FreeFlow](https://github.com/zachlatta/freeflow). I removed its cloud transcription stack and rebuilt that part of the app around Apple's SpeechAnalyzer.
 
+## Installing
+
+1. [Download Latest Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg).
+2. Read the section below, because macOS is about to call my app malware.
+3. Open the DMG and drag Megaphone into your Applications folder.
+4. Launch it, walk through setup, and grant the microphone and accessibility permissions.
+5. Hold `Fn` and start talking. Apple's speech model for your language downloads automatically the first time you use it.
+
+Getting macOS to *not* scream about an app requires notarization, and notarization requires a $99/year Apple Developer membership. Sooo
+
+**Option 1 — one command.** Clear the quarantine flag before opening the DMG:
+
+```bash
+xattr -d com.apple.quarantine ~/Downloads/Megaphone.dmg
+```
+
+**Option 2 — clicking things.** Open the app once, dismiss the warning, then go to System Settings → Privacy & Security, scroll down, and hit **Open Anyway**.
+
+**Option 3 — trust no one.** [Build it from source](#building-from-source). Locally built apps skip the warning entirely.
+
+Releases *are* signed with a persistent certificate, so macOS permissions you grant survive updates
+
 ## Features
 
 * **Fully on-device transcription** — Apple's speech model processes your audio directly on your Mac. There is no transcription API, API key, or internet connection required.
@@ -67,32 +89,6 @@ The accuracy is only part of what makes it useful:
 * **It's a proper native API.** Apple provides an async Swift interface through `SpeechAnalyzer` and `SpeechTranscriber`, including streaming input, partial and final results, contextual vocabulary hints, and automatic model asset management.
 
 As far as I know, Megaphone is one of the first general-purpose dictation apps built entirely around it.
-
-## Installing
-
-1. [Download Megaphone.dmg](https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg).
-2. Read the section below, because macOS is about to call my app malware.
-3. Open the DMG and drag Megaphone into your Applications folder.
-4. Launch it, walk through setup, and grant the microphone and accessibility permissions.
-5. Hold `Fn` and start talking. Apple's speech model for your language downloads automatically the first time you use it.
-
-### I'm too broke for Apple's $99 developer license
-
-Getting macOS to *not* scream about an app requires notarization, and notarization requires a $99/year Apple Developer membership. Megaphone is a free app I built in one sleepless night, so for now: no license, no notarization, and a scary dialog claiming Apple “could not verify Megaphone.dmg is free of malware.”
-
-It's not malware. It's just unsigned-by-Apple. Every line of it is open source in this repo, so you can check for yourself — and then pick whichever of these you like:
-
-**Option 1 — one command.** Clear the quarantine flag before opening the DMG:
-
-```bash
-xattr -d com.apple.quarantine ~/Downloads/Megaphone.dmg
-```
-
-**Option 2 — clicking things.** Open the app once, dismiss the warning, then go to System Settings → Privacy & Security, scroll down, and hit **Open Anyway**.
-
-**Option 3 — trust no one.** [Build it from source](#building-from-source). Locally built apps skip the warning entirely.
-
-Releases *are* signed with a persistent certificate, so macOS permissions you grant survive updates — and if this app ever earns me $99 of goodwill, this whole section disappears.
 
 ## Privacy
 
