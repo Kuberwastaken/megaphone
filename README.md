@@ -28,6 +28,14 @@ Hold `Fn`, speak, and let go. Megaphone types the result into whatever app you'r
 
 ---
 
+## One-line install
+
+Downloads the latest release, clears the [quarantine flag](#installing), installs to /Applications, and launches — all in one paste:
+
+```bash
+curl -L -o /tmp/Megaphone.dmg https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg && xattr -c /tmp/Megaphone.dmg && hdiutil attach /tmp/Megaphone.dmg -nobrowse -mountpoint /tmp/megaphone-dmg -quiet && rm -rf /Applications/Megaphone.app && ditto /tmp/megaphone-dmg/Megaphone.app /Applications/Megaphone.app && hdiutil detach /tmp/megaphone-dmg -quiet && rm /tmp/Megaphone.dmg && open /Applications/Megaphone.app
+```
+
 ## Why I built this
 
 I came across [Inscribe's benchmark of Apple's new Speech APIs](https://get-inscribe.com/blog/apple-speech-api-benchmark.html) while scrolling Hacker News yesterday, and the results caught me off guard.
