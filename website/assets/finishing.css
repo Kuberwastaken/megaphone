@@ -1,0 +1,9 @@
+.hero-copy { z-index:5; }
+.hero h1 { max-width:1120px; font-size:clamp(76px,9.4vw,132px); text-shadow:0 3px 16px rgba(0,0,0,.95),0 18px 56px #000; }
+.hero p { max-width:760px; font-size:24px; line-height:1.46; text-shadow:0 2px 12px #000,0 12px 38px #000; }
+.socials { align-items:center; }
+.socials a { width:34px; height:34px; margin:0; border:1px solid rgba(255,255,255,.16); border-radius:50%; display:grid; place-items:center; color:#fff; }
+.socials a:hover { border-color:rgba(255,255,255,.38); text-decoration:none; }
+.socials svg { width:17px; height:17px; fill:currentColor; }
+@media(max-width:820px){.hero h1{font-size:clamp(52px,14.8vw,70px)}.hero p{width:min(100%,430px);font-size:19px}.socials{width:auto;gap:10px}}
+@media(max-width:390px){.hero h1{font-size:50px}.hero p{font-size:18px}}
