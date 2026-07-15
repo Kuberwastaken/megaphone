@@ -12,7 +12,7 @@ Requires: macOS 26 Tahoe on Apple silicon
 
 - Streams microphone audio into Apple's SpeechAnalyzer while the user talks, so transcription is nearly complete when the shortcut is released.
 - Runs Smart Cleanup with Apple's on-device Foundation Models framework and falls back to a fast deterministic pass for fillers, stutters, repetitions, and spacing.
-- Offers Inline AI (Alpha): begin a dictation with “Hey Megaphone” to ask a question or generate text directly in the active field.
+- Offers Inline AI (Alpha): begin a dictation with “Hey Megaphone” to ask a question, generate text, or transform the previous dictation using same-app screen context.
 - Learns a private personal Dictionary of names, technical terms, acronyms, and exact heard-to-written corrections.
 - Uses active-app and window context to preserve technical syntax and adapt output to where the user is typing.
 - Supports hold-to-talk, tap-to-toggle, Edit Mode, voice macros, multiple languages, configurable microphones, clipboard restoration, and a run log.
