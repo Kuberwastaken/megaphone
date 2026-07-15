@@ -11,12 +11,10 @@
     .waves i{flex:1;height:var(--h);border-radius:999px 999px 0 0;background:linear-gradient(to top,rgba(255,255,255,.26),rgba(255,255,255,.025))}
     .veil{position:absolute;inset:0;background:linear-gradient(to bottom,rgba(5,5,5,.48),transparent 34%,transparent 82%);pointer-events:none}
     .word{position:absolute;z-index:2;left:50%;top:48%;transform:translate(-50%,-50%);white-space:nowrap;font-size:194px;line-height:.8;font-weight:760;letter-spacing:-.085em;text-shadow:0 6px 28px #000,0 25px 72px rgba(0,0,0,.65)}
-    .legal{position:absolute;z-index:2;left:34px;bottom:24px;color:rgba(255,255,255,.52);font-size:13px}
-    .socials{position:absolute;z-index:2;right:34px;bottom:18px;display:flex;gap:10px}.socials span{width:28px;height:28px;border:1px solid rgba(255,255,255,.2);border-radius:50%;display:grid;place-items:center}.socials svg{width:13px;height:13px;fill:#fff}
   </style>
 </head>
 <body>
-  <main class="frame"><div class="waves" id="waves" aria-hidden="true"></div><div class="veil"></div><div class="word">Megaphone</div><div class="legal">© 2026 Kuber Mehta · MIT License</div><div class="socials"><span><svg viewBox="0 0 24 24"><path d="M12 2a10 10 0 0 0-3.16 19.49c.5.09.68-.22.68-.48v-1.87c-2.78.6-3.37-1.18-3.37-1.18-.45-1.16-1.11-1.47-1.11-1.47-.91-.62.07-.61.07-.61 1 .07 1.53 1.03 1.53 1.03.9 1.53 2.35 1.09 2.92.83.09-.65.35-1.09.64-1.34-2.22-.25-4.56-1.11-4.56-4.94 0-1.09.39-1.98 1.03-2.68-.1-.25-.45-1.27.1-2.64 0 0 .84-.27 2.75 1.02A9.6 9.6 0 0 1 12 6.82a9.6 9.6 0 0 1 2.5.34c1.91-1.29 2.75-1.02 2.75-1.02.55 1.37.2 2.39.1 2.64.64.7 1.03 1.59 1.03 2.68 0 3.84-2.34 4.69-4.57 4.94.36.31.68.92.68 1.86v2.75c0 .27.18.58.69.48A10 10 0 0 0 12 2Z"/></svg></span><span><svg viewBox="0 0 24 24"><path d="M18.9 2H22l-6.77 7.74L23.2 22h-6.24l-4.89-6.39L6.48 22H3.36l7.26-8.3L2.98 2h6.4l4.42 5.84L18.9 2Zm-1.1 17.84h1.72L8.44 4.05H6.6L17.8 19.84Z"/></svg></span><span><svg viewBox="0 0 24 24"><path d="M6.94 8.5H3.56V19h3.38V8.5ZM5.25 3A1.96 1.96 0 1 0 5.25 6.92 1.96 1.96 0 0 0 5.25 3ZM20.44 13c0-3.17-1.69-4.65-3.95-4.65-1.82 0-2.64 1-3.09 1.7V8.5h-3.38V19h3.38v-5.2c0-1.37.26-2.7 1.96-2.7 1.67 0 1.69 1.56 1.69 2.8V19h3.39v-6Z"/></svg></span></div></main>
+  <main class="frame"><div class="waves" id="waves" aria-hidden="true"></div><div class="veil"></div><div class="word">Megaphone</div></main>
   <script>
     const root=document.querySelector('#waves'),heights=[.52,.72,.86,.91,.8,.63,.45,.68,.77,.76,.59,.43,.38,.55,.72,.79,.58,.42,.35,.48,.63,.84,.85,.73,.48,.39,.61,.77,.82,.69,.51,.42,.57,.79,.83,.72,.54,.45];for(let n=0;n<heights.length;n++){const bar=document.createElement('i');bar.style.setProperty('--h',`${150+430*heights[n]}px`);root.append(bar)}
   </script>
