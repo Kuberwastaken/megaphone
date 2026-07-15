@@ -3,6 +3,13 @@ import Foundation
 enum WakePhrase: String, Equatable {
     case heyMegaphone
     case megaphone
+
+    var displayName: String {
+        switch self {
+        case .heyMegaphone: return "Hey Megaphone"
+        case .megaphone: return "Megaphone"
+        }
+    }
 }
 
 struct WakePhraseMatch: Equatable {

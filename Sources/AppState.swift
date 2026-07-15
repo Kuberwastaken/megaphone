@@ -250,7 +250,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let stopSoundNameStorageKey = "stop_sound_name"
     private let errorSoundNameStorageKey = "error_sound_name"
     private let voiceMacrosStorageKey = "voice_macros"
-    private let voiceActivationEnabledStorageKey = "voice_activation_enabled"
     private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
     private let commandModeEnabledStorageKey = "command_mode_enabled"
     private let commandModeStyleStorageKey = "command_mode_style"
@@ -552,17 +551,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
-    @Published var voiceActivationEnabled: Bool {
-        didSet {
-            UserDefaults.standard.set(voiceActivationEnabled, forKey: voiceActivationEnabledStorageKey)
-            reconcileWakeWordListening()
-        }
-    }
-
     @Published var plainMegaphoneWakeWordEnabled: Bool {
         didSet {
             UserDefaults.standard.set(plainMegaphoneWakeWordEnabled, forKey: plainMegaphoneWakeWordEnabledStorageKey)
-            wakeWordService.setAllowPlainMegaphone(plainMegaphoneWakeWordEnabled)
         }
     }
 
@@ -570,15 +561,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             guard oldValue != isRecording else { return }
             AppState.writeRecordingStateFlag(isRecording)
-            reconcileWakeWordListening()
         }
     }
-    @Published var isTranscribing = false {
-        didSet {
-            guard oldValue != isTranscribing else { return }
-            reconcileWakeWordListening()
-        }
-    }
+    @Published var isTranscribing = false
     @Published var retryingItemIDs: Set<UUID> = []
     @Published var lastTranscript: String = ""
     @Published var errorMessage: String?
@@ -617,7 +602,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     let audioRecorder = AudioRecorder()
     let hotkeyManager = HotkeyManager()
     let overlayManager = RecordingOverlayManager()
-    let wakeWordService = WakeWordService()
     private var accessibilityTimer: Timer?
     private var audioLevelCancellable: AnyCancellable?
     private var debugOverlayTimer: Timer?
@@ -644,8 +628,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var activeAudioInterruption: ActiveAudioInterruption?
     private var pendingOverlayDismissToken: UUID?
     private var shouldMonitorHotkeys = false
-    private var shouldMonitorWakeWords = false
-    private var wakeWordStartTask: Task<Void, Never>?
     private var isCapturingShortcut = false
     private var isAwaitingMicrophonePermission = false
     private var pendingMicrophonePermissionTriggerMode: RecordingTriggerMode?
@@ -737,7 +719,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         } else {
             initialMacros = []
         }
-        let voiceActivationEnabled = UserDefaults.standard.bool(forKey: voiceActivationEnabledStorageKey)
         let plainMegaphoneWakeWordEnabled = UserDefaults.standard.bool(
             forKey: plainMegaphoneWakeWordEnabledStorageKey
         )
@@ -802,7 +783,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.stopSoundName = stopSoundName
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
-        self.voiceActivationEnabled = voiceActivationEnabled
         self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
         self.pipelineHistory = savedHistory
         self.hasAccessibility = initialAccessibility
@@ -1245,7 +1225,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     customSystemPrompt: capturedCustomSystemPrompt,
                     customContextPrompt: self.customContextPrompt,
                     outputLanguage: self.outputLanguage,
-                    cleanupMode: self.smartCleanupMode
+                    cleanupMode: self.smartCleanupMode,
+                    plainMegaphoneWakeWordEnabled: self.plainMegaphoneWakeWordEnabled
                 )
                 finalTranscript = result.finalTranscript
                 processingStatus = Self.statusMessage(
@@ -1686,67 +1667,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             self?.handleEscapeKeyPress() ?? false
         }
         restartHotkeyMonitoring()
-    }
-
-    func startVoiceActivationMonitoring() {
-        shouldMonitorWakeWords = true
-        reconcileWakeWordListening()
-    }
-
-    func stopVoiceActivationMonitoring() {
-        shouldMonitorWakeWords = false
-        wakeWordStartTask?.cancel()
-        wakeWordStartTask = nil
-        wakeWordService.stop()
-    }
-
-    private func reconcileWakeWordListening() {
-        guard shouldMonitorWakeWords, voiceActivationEnabled, hasCompletedSetup else {
-            if wakeWordService.state != .disabled {
-                wakeWordStartTask?.cancel()
-                wakeWordStartTask = nil
-                wakeWordService.stop()
-            }
-            return
-        }
-
-        if isRecording || isTranscribing || isAwaitingMicrophonePermission {
-            wakeWordService.suspend()
-            return
-        }
-
-        switch wakeWordService.state {
-        case .listening:
-            return
-        case .suspended:
-            wakeWordService.resume()
-        case .disabled, .unavailable, .error:
-            guard wakeWordStartTask == nil else { return }
-            let localePreference = transcriptionLanguage
-            let microphoneID = selectedMicrophoneID
-            wakeWordStartTask = Task { [weak self] in
-                guard let self else { return }
-                defer { self.wakeWordStartTask = nil }
-                guard let locale = try? await SpeechLocaleResolver.resolve(preference: localePreference),
-                      !Task.isCancelled else {
-                    return
-                }
-                self.wakeWordService.start(
-                    locale: locale,
-                    selectedMicrophoneID: microphoneID,
-                    allowPlainMegaphone: self.plainMegaphoneWakeWordEnabled
-                ) { [weak self] _ in
-                    self?.startVoiceTriggeredRecording()
-                }
-            }
-        }
-    }
-
-    private func startVoiceTriggeredRecording() {
-        guard voiceActivationEnabled, !isRecording, !isTranscribing else { return }
-        wakeWordService.suspend()
-        shortcutSessionController.beginManual(mode: .toggle)
-        startRecording(triggerMode: .toggle)
     }
 
     func stopHotkeyMonitoring() {
@@ -2568,6 +2488,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case preservedExactWording
         case commandModeSucceeded(invocation: CommandInvocation)
         case commandModeFailedFallback(invocation: CommandInvocation)
+        case wakeCommandSucceeded(phrase: WakePhrase, elapsed: TimeInterval)
+        case wakeCommandFailedFallback(phrase: WakePhrase, reason: String)
 
         func statusMessage(isRetry: Bool = false) -> String {
             switch self {
@@ -2588,6 +2510,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return "Edit mode succeeded (\(invocation.rawValue))"
             case .commandModeFailedFallback(let invocation):
                 return "Edit mode failed, using selected text (\(invocation.rawValue))"
+            case .wakeCommandSucceeded(let phrase, let elapsed):
+                return "\(phrase.displayName) command succeeded (\(String(format: "%.2fs", elapsed)))"
+            case .wakeCommandFailedFallback(let phrase, let reason):
+                return "\(phrase.displayName) command unavailable; pasted request (\(reason))"
             }
         }
     }
@@ -2602,6 +2528,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         customContextPrompt: String,
         outputLanguage: String = "",
         cleanupMode: SmartCleanupMode,
+        plainMegaphoneWakeWordEnabled: Bool,
         smartSessionID: UUID? = nil
     ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
         let trimmedRawTranscript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2615,6 +2542,38 @@ final class AppState: ObservableObject, @unchecked Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let corrections = TranscriptTidier.CorrectionMapping.parse(wordCorrections)
+
+        if case .dictation = intent, let wake = WakePhraseMatcher.detect(
+            in: trimmedRawTranscript,
+            plainMegaphoneEnabled: plainMegaphoneWakeWordEnabled
+        ) {
+            let command = wake.trailingText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !command.isEmpty else {
+                return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "")
+            }
+            do {
+                let result = try await AppleFoundationModelsPostProcessor.shared.executeCommand(
+                    command,
+                    appName: context.appName,
+                    windowTitle: context.windowTitle,
+                    contextSummary: context.contextSummary,
+                    vocabulary: vocabulary,
+                    timeout: 5
+                )
+                return (
+                    result.text,
+                    .wakeCommandSucceeded(phrase: wake.phrase, elapsed: result.elapsed),
+                    result.prompt
+                )
+            } catch {
+                os_log(.error, log: recordingLog, "Wake command failed: %{public}@", error.localizedDescription)
+                return (
+                    command,
+                    .wakeCommandFailedFallback(phrase: wake.phrase, reason: error.localizedDescription),
+                    ""
+                )
+            }
+        }
 
         if case .command(let invocation, let selectedText) = intent {
             do {
@@ -2830,6 +2789,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         customContextPrompt: self.customContextPrompt,
                         outputLanguage: self.outputLanguage,
                         cleanupMode: self.smartCleanupMode,
+                        plainMegaphoneWakeWordEnabled: self.plainMegaphoneWakeWordEnabled,
                         smartSessionID: cleanupSessionID
                     )
                     try Task.checkCancellation()

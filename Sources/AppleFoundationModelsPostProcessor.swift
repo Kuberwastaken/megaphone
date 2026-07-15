@@ -64,6 +64,9 @@ actor AppleFoundationModelsPostProcessor {
     Return only the replacement text, with no explanation, markdown, or quotation marks.
     Treat the selected text as the only source material and the spoken command as the requested transformation. Preserve the original language unless translation is explicitly requested. Do not answer unrelated questions or invent unrelated content.
     """
+    private static let commandInstructions = """
+    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Be concise by default. Use application context only when it helps interpret the request. Never claim to perform actions outside this response; produce the text the user asked for instead.
+    """
 
     private let model = SystemLanguageModel(
         useCase: .general,
@@ -156,6 +159,49 @@ actor AppleFoundationModelsPostProcessor {
         let output = try await respond(session: session, prompt: prompt, timeout: timeout)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         try Self.validate(output, source: selectedText, allowsExpansion: true)
+        return SmartCleanupResponse(
+            text: output,
+            prompt: prompt,
+            elapsed: started.duration(to: .now).timeInterval
+        )
+    }
+
+    func executeCommand(
+        _ command: String,
+        appName: String?,
+        windowTitle: String?,
+        contextSummary: String,
+        vocabulary: [String],
+        timeout: TimeInterval
+    ) async throws -> SmartCleanupResponse {
+        guard case .available = availability() else {
+            if case .unavailable(let reason) = availability() {
+                throw SmartCleanupError.unavailable(reason)
+            }
+            throw SmartCleanupError.unavailable("unknown reason")
+        }
+
+        let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { throw SmartCleanupError.emptyOutput }
+        let session = makeSession(instructions: Self.commandInstructions)
+        let vocabularyHint = vocabulary.isEmpty
+            ? ""
+            : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
+        let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
+        let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
+        let contextHint = contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? ""
+            : "Context: \(contextSummary.prefix(800))\n"
+        let prompt = """
+        \(appHint)\(windowHint)\(contextHint)\(vocabularyHint)SPOKEN REQUEST:
+        <request>
+        \(trimmed)
+        </request>
+        """
+        let started = ContinuousClock.now
+        let output = try await respond(session: session, prompt: prompt, timeout: timeout)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !output.isEmpty else { throw SmartCleanupError.emptyOutput }
         return SmartCleanupResponse(
             text: output,
             prompt: prompt,

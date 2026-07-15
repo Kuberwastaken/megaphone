@@ -27,7 +27,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             appState.startHotkeyMonitoring()
             appState.startAccessibilityPolling()
-            appState.startVoiceActivationMonitoring()
             Task { @MainActor in
                 UpdateManager.shared.startPeriodicChecks()
             }
@@ -90,7 +89,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         appState.hasCompletedSetup = false
         appState.stopAccessibilityPolling()
         appState.stopHotkeyMonitoring()
-        appState.stopVoiceActivationMonitoring()
         showSetupWindow()
 
         // Restore prior state if the user closes the wizard without completing.
@@ -107,7 +105,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     self.appState.hasCompletedSetup = true
                     self.appState.startHotkeyMonitoring()
                     self.appState.startAccessibilityPolling()
-                    self.appState.startVoiceActivationMonitoring()
                     NSApp.setActivationPolicy(.accessory)
                 }
                 self.setupWindow = nil
@@ -203,7 +200,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.setActivationPolicy(.accessory)
         appState.startHotkeyMonitoring()
         appState.startAccessibilityPolling()
-        appState.startVoiceActivationMonitoring()
         Task { @MainActor in
             UpdateManager.shared.startPeriodicChecks()
         }

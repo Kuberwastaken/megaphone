@@ -53,6 +53,10 @@ enum WakePhraseMatcherTests {
 
     private static func testTrailingDictation() {
         expectEqual(
+            WakePhraseMatcher.detect(in: "Hey Megaphone, what's 2 + 3?"),
+            WakePhraseMatch(phrase: .heyMegaphone, trailingText: "what's 2 + 3?")
+        )
+        expectEqual(
             WakePhraseMatcher.detect(in: "Hey Megaphone, write this down."),
             WakePhraseMatch(phrase: .heyMegaphone, trailingText: "write this down.")
         )
