@@ -8,6 +8,7 @@ struct AppContextServiceTests {
         testNonStrippingModelPreservesExistingBehavior()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
+        WakePhraseMatcherTests.run()
         print("MegaphoneTests passed")
     }
 
