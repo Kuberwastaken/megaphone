@@ -250,6 +250,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let stopSoundNameStorageKey = "stop_sound_name"
     private let errorSoundNameStorageKey = "error_sound_name"
     private let voiceMacrosStorageKey = "voice_macros"
+    private let voiceActivationEnabledStorageKey = "voice_activation_enabled"
+    private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
     private let commandModeEnabledStorageKey = "command_mode_enabled"
     private let commandModeStyleStorageKey = "command_mode_style"
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
@@ -550,13 +552,33 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @Published var voiceActivationEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(voiceActivationEnabled, forKey: voiceActivationEnabledStorageKey)
+            reconcileWakeWordListening()
+        }
+    }
+
+    @Published var plainMegaphoneWakeWordEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(plainMegaphoneWakeWordEnabled, forKey: plainMegaphoneWakeWordEnabledStorageKey)
+            wakeWordService.setAllowPlainMegaphone(plainMegaphoneWakeWordEnabled)
+        }
+    }
+
     @Published var isRecording = false {
         didSet {
             guard oldValue != isRecording else { return }
             AppState.writeRecordingStateFlag(isRecording)
+            reconcileWakeWordListening()
         }
     }
-    @Published var isTranscribing = false
+    @Published var isTranscribing = false {
+        didSet {
+            guard oldValue != isTranscribing else { return }
+            reconcileWakeWordListening()
+        }
+    }
     @Published var retryingItemIDs: Set<UUID> = []
     @Published var lastTranscript: String = ""
     @Published var errorMessage: String?
@@ -595,6 +617,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     let audioRecorder = AudioRecorder()
     let hotkeyManager = HotkeyManager()
     let overlayManager = RecordingOverlayManager()
+    let wakeWordService = WakeWordService()
     private var accessibilityTimer: Timer?
     private var audioLevelCancellable: AnyCancellable?
     private var debugOverlayTimer: Timer?
@@ -621,6 +644,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var activeAudioInterruption: ActiveAudioInterruption?
     private var pendingOverlayDismissToken: UUID?
     private var shouldMonitorHotkeys = false
+    private var shouldMonitorWakeWords = false
+    private var wakeWordStartTask: Task<Void, Never>?
     private var isCapturingShortcut = false
     private var isAwaitingMicrophonePermission = false
     private var pendingMicrophonePermissionTriggerMode: RecordingTriggerMode?
@@ -712,6 +737,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
         } else {
             initialMacros = []
         }
+        let voiceActivationEnabled = UserDefaults.standard.bool(forKey: voiceActivationEnabledStorageKey)
+        let plainMegaphoneWakeWordEnabled = UserDefaults.standard.bool(
+            forKey: plainMegaphoneWakeWordEnabledStorageKey
+        )
 
         let initialAccessibility = AXIsProcessTrusted()
         let initialScreenCapturePermission = CGPreflightScreenCaptureAccess()
@@ -773,6 +802,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.stopSoundName = stopSoundName
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
+        self.voiceActivationEnabled = voiceActivationEnabled
+        self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
         self.pipelineHistory = savedHistory
         self.hasAccessibility = initialAccessibility
         self.hasScreenRecordingPermission = initialScreenCapturePermission
@@ -1655,6 +1686,67 @@ final class AppState: ObservableObject, @unchecked Sendable {
             self?.handleEscapeKeyPress() ?? false
         }
         restartHotkeyMonitoring()
+    }
+
+    func startVoiceActivationMonitoring() {
+        shouldMonitorWakeWords = true
+        reconcileWakeWordListening()
+    }
+
+    func stopVoiceActivationMonitoring() {
+        shouldMonitorWakeWords = false
+        wakeWordStartTask?.cancel()
+        wakeWordStartTask = nil
+        wakeWordService.stop()
+    }
+
+    private func reconcileWakeWordListening() {
+        guard shouldMonitorWakeWords, voiceActivationEnabled, hasCompletedSetup else {
+            if wakeWordService.state != .disabled {
+                wakeWordStartTask?.cancel()
+                wakeWordStartTask = nil
+                wakeWordService.stop()
+            }
+            return
+        }
+
+        if isRecording || isTranscribing || isAwaitingMicrophonePermission {
+            wakeWordService.suspend()
+            return
+        }
+
+        switch wakeWordService.state {
+        case .listening:
+            return
+        case .suspended:
+            wakeWordService.resume()
+        case .disabled, .unavailable, .error:
+            guard wakeWordStartTask == nil else { return }
+            let localePreference = transcriptionLanguage
+            let microphoneID = selectedMicrophoneID
+            wakeWordStartTask = Task { [weak self] in
+                guard let self else { return }
+                defer { self.wakeWordStartTask = nil }
+                guard let locale = try? await SpeechLocaleResolver.resolve(preference: localePreference),
+                      !Task.isCancelled else {
+                    return
+                }
+                self.wakeWordService.start(
+                    locale: locale,
+                    selectedMicrophoneID: microphoneID,
+                    allowPlainMegaphone: self.plainMegaphoneWakeWordEnabled
+                ) { [weak self] _ in
+                    self?.startVoiceTriggeredRecording()
+                }
+            }
+        }
+    }
+
+    private func startVoiceTriggeredRecording() {
+        guard voiceActivationEnabled, !isRecording, !isTranscribing else { return }
+        wakeWordService.suspend()
+        shortcutSessionController.beginManual(mode: .toggle)
+        startRecording(triggerMode: .toggle)
     }
 
     func stopHotkeyMonitoring() {

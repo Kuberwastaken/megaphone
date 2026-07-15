@@ -448,6 +448,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Dictation Shortcuts", icon: "keyboard.fill") {
                     hotkeySection
                 }
+                SettingsCard("Voice Activation", icon: "waveform.badge.mic") {
+                    voiceActivationSection
+                }
                 SettingsCard("Audio During Dictation", icon: "speaker.slash.fill") {
                     dictationAudioSection
                 }
@@ -783,6 +786,36 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    // MARK: Voice Activation
+
+    private var voiceActivationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Listen for a wake phrase", isOn: $appState.voiceActivationEnabled)
+
+            HStack {
+                Text("“Hey Megaphone”")
+                    .font(.caption.weight(.semibold))
+                Spacer()
+                Text("Always on")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .opacity(appState.voiceActivationEnabled ? 1 : 0.55)
+
+            Toggle(
+                "Also listen for “Megaphone”",
+                isOn: $appState.plainMegaphoneWakeWordEnabled
+            )
+            .disabled(!appState.voiceActivationEnabled)
+
+            VoiceActivationStatusView(service: appState.wakeWordService)
+
+            Text("Say “Hey Megaphone” to start dictating without a shortcut. The shorter wake word is optional because it can activate more easily by accident. Listening stays on-device; macOS shows its microphone indicator while it is active.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
@@ -2076,6 +2109,43 @@ struct FlowLayout: Layout {
         }
 
         return (CGSize(width: maxWidth, height: totalHeight), positions)
+    }
+}
+
+private struct VoiceActivationStatusView: View {
+    @ObservedObject var service: WakeWordService
+
+    var body: some View {
+        Label(label, systemImage: symbol)
+            .font(.caption)
+            .foregroundStyle(color)
+    }
+
+    private var label: String {
+        switch service.state {
+        case .disabled: return "Voice activation is off"
+        case .listening: return "Listening for “Hey Megaphone”…"
+        case .suspended: return "Paused while dictating"
+        case .unavailable: return "Wake phrase recognition is unavailable"
+        case .error(let message): return "Voice activation needs attention: \(message)"
+        }
+    }
+
+    private var symbol: String {
+        switch service.state {
+        case .listening: return "ear.fill"
+        case .suspended: return "pause.circle"
+        case .unavailable, .error: return "exclamationmark.triangle.fill"
+        case .disabled: return "mic.slash"
+        }
+    }
+
+    private var color: Color {
+        switch service.state {
+        case .listening: return .green
+        case .unavailable, .error: return .orange
+        case .disabled, .suspended: return .secondary
+        }
     }
 }
 
