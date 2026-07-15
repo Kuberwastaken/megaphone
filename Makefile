@@ -11,9 +11,17 @@ APP_EXECUTABLE = $(MACOS_DIR)/$(APP_NAME)
 APP_EXECUTABLE_TARGET := $(subst $(space),\ ,$(APP_EXECUTABLE))
 
 SOURCES = $(shell find Sources -name '*.swift' -type f | LC_ALL=C sort)
+LAUNCHER_SOURCES = $(shell find Launcher -name '*.swift' -type f | LC_ALL=C sort)
 TEST_RUNNER = $(BUILD_DIR)/MegaphoneTests
 RESOURCES = $(CONTENTS)/Resources
 ARCH ?= $(shell uname -m)
+
+# The bundle's main executable is a small launcher that deploys back to
+# macOS 13. Older systems can actually run it and get told that macOS 26 is
+# required, instead of Launch Services failing with error -10825; on
+# macOS 26+ it execs the core binary below, which needs the 26-only APIs.
+CORE_NAME = $(subst $(space),$(empty),$(APP_NAME))Core
+CORE_EXECUTABLE = $(MACOS_DIR)/$(CORE_NAME)
 
 # Pick the icon source based on which bundle we are building. Dev builds get
 # a distinct hammer-on-waveform icon so a developer's dock shows at a glance
@@ -30,21 +38,37 @@ endif
 
 all: $(APP_EXECUTABLE_TARGET)
 
-$(APP_EXECUTABLE_TARGET): $(SOURCES) Info.plist $(ICON_ICNS)
+$(APP_EXECUTABLE_TARGET): $(SOURCES) $(LAUNCHER_SOURCES) Info.plist $(ICON_ICNS)
 	@mkdir -p "$(MACOS_DIR)" "$(RESOURCES)"
 ifeq ($(ARCH),universal)
 	swiftc \
 		-parse-as-library \
-		-o "$(MACOS_DIR)/$(APP_NAME)-arm64" \
+		-o "$(MACOS_DIR)/$(CORE_NAME)-arm64" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target arm64-apple-macosx26.0 \
 		$(SOURCES)
 	swiftc \
 		-parse-as-library \
-		-o "$(MACOS_DIR)/$(APP_NAME)-x86_64" \
+		-o "$(MACOS_DIR)/$(CORE_NAME)-x86_64" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target x86_64-apple-macosx26.0 \
 		$(SOURCES)
+	lipo -create -output "$(CORE_EXECUTABLE)" \
+		"$(MACOS_DIR)/$(CORE_NAME)-arm64" \
+		"$(MACOS_DIR)/$(CORE_NAME)-x86_64"
+	@rm "$(MACOS_DIR)/$(CORE_NAME)-arm64" "$(MACOS_DIR)/$(CORE_NAME)-x86_64"
+	swiftc \
+		-parse-as-library \
+		-o "$(MACOS_DIR)/$(APP_NAME)-arm64" \
+		-sdk $(shell xcrun --show-sdk-path) \
+		-target arm64-apple-macosx13.0 \
+		$(LAUNCHER_SOURCES)
+	swiftc \
+		-parse-as-library \
+		-o "$(MACOS_DIR)/$(APP_NAME)-x86_64" \
+		-sdk $(shell xcrun --show-sdk-path) \
+		-target x86_64-apple-macosx13.0 \
+		$(LAUNCHER_SOURCES)
 	lipo -create -output "$(MACOS_DIR)/$(APP_NAME)" \
 		"$(MACOS_DIR)/$(APP_NAME)-arm64" \
 		"$(MACOS_DIR)/$(APP_NAME)-x86_64"
@@ -52,20 +76,28 @@ ifeq ($(ARCH),universal)
 else
 	swiftc \
 		-parse-as-library \
-		-o "$(MACOS_DIR)/$(APP_NAME)" \
+		-o "$(CORE_EXECUTABLE)" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target $(ARCH)-apple-macosx26.0 \
 		$(SOURCES)
+	swiftc \
+		-parse-as-library \
+		-o "$(MACOS_DIR)/$(APP_NAME)" \
+		-sdk $(shell xcrun --show-sdk-path) \
+		-target $(ARCH)-apple-macosx13.0 \
+		$(LAUNCHER_SOURCES)
 endif
 	@cp Info.plist "$(CONTENTS)/"
 	@plutil -replace CFBundleName -string "$(APP_NAME)" "$(CONTENTS)/Info.plist"
 	@plutil -replace CFBundleDisplayName -string "$(APP_NAME)" "$(CONTENTS)/Info.plist"
 	@plutil -replace CFBundleExecutable -string "$(APP_NAME)" "$(CONTENTS)/Info.plist"
+	@plutil -replace MegaphoneCoreExecutable -string "$(CORE_NAME)" "$(CONTENTS)/Info.plist"
 	@plutil -replace CFBundleIdentifier -string "$(BUNDLE_ID)" "$(CONTENTS)/Info.plist"
 	@cp $(ICON_ICNS) "$(RESOURCES)/AppIcon.icns"
 	@plutil -replace NSMicrophoneUsageDescription -string "$(APP_NAME) needs microphone access to transcribe your speech." "$(CONTENTS)/Info.plist"
 	@plutil -replace NSSpeechRecognitionUsageDescription -string "$(APP_NAME) needs speech recognition to convert your voice to text." "$(CONTENTS)/Info.plist"
 	@plutil -replace NSAccessibilityUsageDescription -string "$(APP_NAME) needs accessibility access to detect the text cursor position and paste transcribed text." "$(CONTENTS)/Info.plist"
+	@codesign --force --options runtime --sign "$(CODESIGN_IDENTITY)" --entitlements Megaphone.entitlements "$(CORE_EXECUTABLE)"
 	@codesign --force --options runtime --sign "$(CODESIGN_IDENTITY)" --entitlements Megaphone.entitlements "$(APP_BUNDLE)"
 	@echo "Built $(APP_BUNDLE)"
 
