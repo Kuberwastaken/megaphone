@@ -793,7 +793,15 @@ struct GeneralSettingsView: View {
 
     private var wakeCommandSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle("Enable Ask Megaphone", isOn: $appState.wakeCommandsEnabled)
+            HStack {
+                Toggle("Enable Ask Megaphone", isOn: $appState.wakeCommandsEnabled)
+                Text("ALPHA")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.purple)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Capsule().fill(Color.purple.opacity(0.12)))
+            }
 
             HStack {
                 Text("“Hey Megaphone”")
@@ -811,7 +819,7 @@ struct GeneralSettingsView: View {
             )
             .disabled(!appState.wakeCommandsEnabled)
 
-            Text("Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question or generate text. Megaphone removes the phrase and pastes the on-device answer. The shorter trigger is optional.")
+            Text("Inline AI is in alpha. Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question or generate text. Megaphone removes the phrase and pastes the on-device answer. The shorter trigger is optional.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

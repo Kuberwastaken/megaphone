@@ -10,6 +10,21 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.3] - 2026-07-15
+
+### Added
+
+- Inline AI (Alpha): hold the normal dictation shortcut and begin with “Hey Megaphone” to ask a question or generate text directly in the active app, powered entirely by Apple's on-device Foundation Models framework.
+- An optional shorter “Megaphone” trigger and a master switch to turn Inline AI off completely.
+
+### Improved
+
+- SpeechAnalyzer is biased toward the Megaphone wake phrases and safely recognizes common leading variations such as “mega phone,” “made a phone,” and “he made a phone.” These aliases never rewrite ordinary words in the middle of dictation.
+
+### Fixed
+
+- Wake-prefixed requests now strip the trigger and enter the command pipeline instead of being pasted as literal dictation.
+
 ## [1.1.2] - 2026-07-14
 
 ### Added
