@@ -94,12 +94,19 @@ struct WakePhraseMatcher {
     private static let phraseSeparator = #"[\s\p{P}\p{S}]+"#
     private static let phraseBoundary = #"(?=$|[\s\p{P}\p{S}])"#
 
+    // SpeechAnalyzer occasionally segments the product name ("mega phone")
+    // or hears it phonetically ("made a phone"). These aliases are accepted
+    // only as a leading trigger, so they never rewrite ordinary dictation.
+    private static let megaphoneVariants = "(?:megaphone|mega" + phraseSeparator
+        + "phone|made" + phraseSeparator + "a" + phraseSeparator + "phone)"
+    private static let heyVariants = "(?:hey|he)"
+
     private static let heyPattern = try! NSRegularExpression(
-        pattern: leadingSeparators + "hey" + phraseSeparator + "megaphone" + phraseBoundary,
+        pattern: leadingSeparators + heyVariants + phraseSeparator + megaphoneVariants + phraseBoundary,
         options: [.caseInsensitive]
     )
     private static let plainPattern = try! NSRegularExpression(
-        pattern: leadingSeparators + "megaphone" + phraseBoundary,
+        pattern: leadingSeparators + megaphoneVariants + phraseBoundary,
         options: [.caseInsensitive]
     )
     private static let trailingSeparators = CharacterSet.whitespacesAndNewlines

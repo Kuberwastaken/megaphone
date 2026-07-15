@@ -250,6 +250,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let stopSoundNameStorageKey = "stop_sound_name"
     private let errorSoundNameStorageKey = "error_sound_name"
     private let voiceMacrosStorageKey = "voice_macros"
+    private let wakeCommandsEnabledStorageKey = "wake_commands_enabled"
     private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
     private let commandModeEnabledStorageKey = "command_mode_enabled"
     private let commandModeStyleStorageKey = "command_mode_style"
@@ -380,6 +381,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private var dictionaryVocabulary: String {
         DictionaryStore.shared.activeTermsText
+    }
+
+    private var speechRecognitionVocabulary: String {
+        guard wakeCommandsEnabled else { return dictionaryVocabulary }
+        return [dictionaryVocabulary, "Hey Megaphone", "Megaphone"]
+            .filter { !$0.isEmpty }
+            .joined(separator: "\n")
     }
 
     @Published var wordCorrections: String {
@@ -557,6 +565,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @Published var wakeCommandsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(wakeCommandsEnabled, forKey: wakeCommandsEnabledStorageKey)
+        }
+    }
+
     @Published var isRecording = false {
         didSet {
             guard oldValue != isRecording else { return }
@@ -722,6 +736,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let plainMegaphoneWakeWordEnabled = UserDefaults.standard.bool(
             forKey: plainMegaphoneWakeWordEnabledStorageKey
         )
+        let wakeCommandsEnabled = UserDefaults.standard.object(forKey: wakeCommandsEnabledStorageKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: wakeCommandsEnabledStorageKey)
 
         let initialAccessibility = AXIsProcessTrusted()
         let initialScreenCapturePermission = CGPreflightScreenCaptureAccess()
@@ -783,6 +800,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.stopSoundName = stopSoundName
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
+        self.wakeCommandsEnabled = wakeCommandsEnabled
         self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
         self.pipelineHistory = savedHistory
         self.hasAccessibility = initialAccessibility
@@ -1049,7 +1067,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         try await SpeechAnalyzerService.transcribe(
             fileURL: fileURL,
             localePreference: transcriptionLanguage,
-            vocabulary: dictionaryVocabulary
+            vocabulary: speechRecognitionVocabulary
         )
     }
 
@@ -1226,6 +1244,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     customContextPrompt: self.customContextPrompt,
                     outputLanguage: self.outputLanguage,
                     cleanupMode: self.smartCleanupMode,
+                    wakeCommandsEnabled: self.wakeCommandsEnabled,
                     plainMegaphoneWakeWordEnabled: self.plainMegaphoneWakeWordEnabled
                 )
                 finalTranscript = result.finalTranscript
@@ -2528,6 +2547,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         customContextPrompt: String,
         outputLanguage: String = "",
         cleanupMode: SmartCleanupMode,
+        wakeCommandsEnabled: Bool,
         plainMegaphoneWakeWordEnabled: Bool,
         smartSessionID: UUID? = nil
     ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
@@ -2543,7 +2563,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             .filter { !$0.isEmpty }
         let corrections = TranscriptTidier.CorrectionMapping.parse(wordCorrections)
 
-        if case .dictation = intent, let wake = WakePhraseMatcher.detect(
+        if wakeCommandsEnabled, case .dictation = intent, let wake = WakePhraseMatcher.detect(
             in: trimmedRawTranscript,
             plainMegaphoneEnabled: plainMegaphoneWakeWordEnabled
         ) {
@@ -2789,6 +2809,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         customContextPrompt: self.customContextPrompt,
                         outputLanguage: self.outputLanguage,
                         cleanupMode: self.smartCleanupMode,
+                        wakeCommandsEnabled: self.wakeCommandsEnabled,
                         plainMegaphoneWakeWordEnabled: self.plainMegaphoneWakeWordEnabled,
                         smartSessionID: cleanupSessionID
                     )
@@ -2998,7 +3019,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private func startNativeStreamingSession() {
         let session = SpeechAnalyzerStreamingSession(
             localePreference: transcriptionLanguage,
-            vocabulary: dictionaryVocabulary
+            vocabulary: speechRecognitionVocabulary
         )
         session.start()
         nativeStreamingSession = session

@@ -793,6 +793,8 @@ struct GeneralSettingsView: View {
 
     private var wakeCommandSection: some View {
         VStack(alignment: .leading, spacing: 10) {
+            Toggle("Enable Ask Megaphone", isOn: $appState.wakeCommandsEnabled)
+
             HStack {
                 Text("“Hey Megaphone”")
                     .font(.caption.weight(.semibold))
@@ -801,11 +803,13 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+            .opacity(appState.wakeCommandsEnabled ? 1 : 0.5)
 
             Toggle(
                 "Also use “Megaphone”",
                 isOn: $appState.plainMegaphoneWakeWordEnabled
             )
+            .disabled(!appState.wakeCommandsEnabled)
 
             Text("Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question or generate text. Megaphone removes the phrase and pastes the on-device answer. The shorter trigger is optional.")
                 .font(.caption)

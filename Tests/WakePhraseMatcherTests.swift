@@ -4,6 +4,7 @@ enum WakePhraseMatcherTests {
     static func run() {
         testHeyMegaphoneIsAlwaysRecognized()
         testPlainMegaphoneToggle()
+        testCommonRecognitionAliases()
         testPhraseBoundariesAndPosition()
         testTrailingDictation()
         testPartialResultSuppression()
@@ -33,6 +34,30 @@ enum WakePhraseMatcherTests {
             WakePhraseMatcher.detect(in: "Megaphone", plainMegaphoneEnabled: true),
             WakePhraseMatch(phrase: .megaphone, trailingText: "")
         )
+    }
+
+    private static func testCommonRecognitionAliases() {
+        let alwaysOn = [
+            "hey mega phone, write this",
+            "hey made a phone, write this",
+            "he megaphone, write this",
+            "he made a phone, write this"
+        ]
+        for transcript in alwaysOn {
+            expectEqual(
+                WakePhraseMatcher.detect(in: transcript),
+                WakePhraseMatch(phrase: .heyMegaphone, trailingText: "write this"),
+                "Did not normalize \(transcript.debugDescription)"
+            )
+        }
+
+        for transcript in ["mega phone, write this", "made a phone, write this"] {
+            expectEqual(WakePhraseMatcher.detect(in: transcript), nil)
+            expectEqual(
+                WakePhraseMatcher.detect(in: transcript, plainMegaphoneEnabled: true),
+                WakePhraseMatch(phrase: .megaphone, trailingText: "write this")
+            )
+        }
     }
 
     private static func testPhraseBoundariesAndPosition() {
