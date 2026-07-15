@@ -37,8 +37,8 @@
 
   #settings { overflow:hidden; }
   #settings > .wrap > .head,#settings .settings-story { display:none; }
-  .bento-head { display:block!important; padding:0; margin:0 0 32px; }
-  .feature-bento { display:flex; flex-direction:column; gap:14px; }
+  .bento-head { width:calc(100% - 44px); display:block!important; padding:0; margin:0 auto 32px; }
+  .feature-bento { width:calc(100% - 44px); margin-inline:auto; display:flex; flex-direction:column; gap:14px; }
   .bento-card { flex:none; width:100%; border-radius:12px; }
   .cleanup-card { height:520px; }
   .languages-card { height:390px; }
@@ -61,12 +61,19 @@
   .awareness-scene { min-height:500px; }
   .awareness-scene.active { display:block; }
   .mail-list,.slack-rail { display:none; }
-  .mail-draft,.slack-thread { min-height:500px; padding:20px 18px; }
+  .mail-draft { min-height:500px; padding:20px 18px; }
+  .slack-scene,.slack-thread { min-height:410px; }
+  .slack-thread { padding:20px 18px; background:#1a1d21; }
   .mail-toolbar { margin:-20px -18px 16px; overflow:hidden; white-space:nowrap; }
   .mail-copy { font-size:13px; }
-  .slack-topbar { margin:-20px -18px 16px; }
-  .slack-search { min-width:0; }
+  .slack-topbar { height:44px; margin:-20px -18px 16px; padding:0 12px; border-color:rgba(255,255,255,.12); background:#3f0e40; color:rgba(255,255,255,.72); }
+  .slack-search { min-width:0; border-color:rgba(255,255,255,.18); background:rgba(255,255,255,.11); color:rgba(255,255,255,.78); }
+  .slack-head { padding-bottom:12px; font-size:14px; }
   .slack-message { grid-template-columns:30px minmax(0,1fr); }
+  .slack-message .slack-avatar { background:#2eb67d; color:#fff; }
+  .slack-message + .slack-message .slack-avatar { background:#36c5f0; color:#102027; }
+  .slack-message p { margin-top:5px; font-size:12px; line-height:1.48; }
+  .slack-composer { margin-top:24px; }
 
   .feature-split { display:flex; flex-direction:column; gap:30px; }
   .feature-copy { order:-1; }
@@ -82,14 +89,18 @@
   .tech { gap:11px 14px; font-size:9px; }
 
   .flow-footer { min-height:520px; padding:34px 22px 24px; }
-  .footer-nav { align-items:flex-start; gap:18px; }
-  .footer-links { gap:12px; font-size:11px; }
+  .footer-nav { justify-content:center; align-items:center; }
+  .footer-brand { display:none; }
+  .footer-links { position:relative; z-index:5; gap:22px; font-size:12px; }
   .footer-links a:nth-child(-n+2) { display:none; }
+  .footer-links a { position:relative; z-index:6; padding:6px 0; pointer-events:auto; }
   .footer-wave { inset:100px 0 78px; height:auto; gap:5px; }
   .footer-wave i { min-width:3px; }
-  .footer-word { left:0; right:0; bottom:142px; width:100%; transform:translateY(35px); text-align:center; font-size:19vw; letter-spacing:-.075em; }
+  .footer-wave,.footer-word { pointer-events:none; }
+  .footer-word { left:0; right:0; bottom:142px; width:100%; transform:translateY(35px); text-align:center; font-size:18vw; letter-spacing:-.07em; }
   .flow-footer.entered .footer-word { transform:none; }
-  .footer-bottom { left:22px; right:22px; bottom:18px; flex-direction:column; align-items:flex-start; gap:10px; }
+  .footer-bottom { left:22px; right:22px; bottom:18px; flex-direction:column; align-items:center; text-align:center; gap:10px; }
+  .socials { width:100%; justify-content:center; }
 }
 
 @media (max-width: 390px) {
