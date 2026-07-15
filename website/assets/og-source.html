@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1200,initial-scale=1">
+  <title>Megaphone social preview</title>
+  <style>
+    *{box-sizing:border-box}html,body{width:1200px;height:630px;margin:0;overflow:hidden;background:#050505;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",sans-serif}
+    .frame{position:relative;width:100%;height:100%;overflow:hidden;background:radial-gradient(ellipse at 50% 90%,#111114 0,#050505 62%)}
+    .waves{position:absolute;inset:26px 0 0;display:flex;align-items:flex-end;gap:8px;padding:0 14px;mask-image:linear-gradient(to right,transparent,#000 4%,#000 96%,transparent)}
+    .waves i{flex:1;height:var(--h);border-radius:999px 999px 0 0;background:linear-gradient(to top,rgba(255,255,255,.28),rgba(255,255,255,.025));box-shadow:inset 1px 0 rgba(255,255,255,.06)}
+    .veil{position:absolute;inset:0;background:linear-gradient(to bottom,#050505 0,transparent 22%,transparent 75%,rgba(5,5,5,.2));pointer-events:none}
+    .word{position:absolute;z-index:2;left:50%;top:48%;transform:translate(-50%,-50%);white-space:nowrap;font-size:214px;line-height:.8;font-weight:760;letter-spacing:-.09em;text-shadow:0 6px 28px #000,0 25px 80px rgba(0,0,0,.72)}
+    .tagline{position:absolute;z-index:2;left:50%;top:69%;transform:translateX(-50%);font-size:24px;font-weight:520;letter-spacing:-.025em;color:rgba(255,255,255,.68);text-shadow:0 3px 18px #000}
+    .rule{position:absolute;z-index:2;left:50%;top:79%;width:54px;height:2px;transform:translateX(-50%);background:rgba(255,255,255,.48)}
+  </style>
+</head>
+<body>
+  <main class="frame"><div class="waves" id="waves" aria-hidden="true"></div><div class="veil"></div><div class="word">Megaphone</div><div class="tagline">Your voice, already written.</div><div class="rule"></div></main>
+  <script>
+    const root=document.querySelector('#waves');for(let n=0;n<92;n++){const bar=document.createElement('i'),x=n/91,envelope=.2+.8*Math.sin(Math.PI*x),signal=.24+.76*Math.abs(Math.sin(n*.47)+.55*Math.sin(n*.18+1.4))/1.55;bar.style.setProperty('--h',`${80+500*envelope*signal}px`);root.append(bar)}
+  </script>
+</body>
+</html>
