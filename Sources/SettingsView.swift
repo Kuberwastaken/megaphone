@@ -819,7 +819,7 @@ struct GeneralSettingsView: View {
             )
             .disabled(!appState.wakeCommandsEnabled)
 
-            Text("Inline AI is in alpha. Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question or generate text. Megaphone removes the phrase and pastes the on-device answer. The shorter trigger is optional.")
+            Text("Inline AI is in alpha. Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question, generate text, or change your previous dictation — try “make that formal.” Megaphone uses the active app and recent text as on-device context, removes the phrase, and pastes the answer. The shorter trigger is optional.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

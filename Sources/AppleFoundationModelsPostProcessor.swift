@@ -65,7 +65,7 @@ actor AppleFoundationModelsPostProcessor {
     Treat the selected text as the only source material and the spoken command as the requested transformation. Preserve the original language unless translation is explicitly requested. Do not answer unrelated questions or invent unrelated content.
     """
     private static let commandInstructions = """
-    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Be concise by default. Use application context only when it helps interpret the request. Never claim to perform actions outside this response; produce the text the user asked for instead.
+    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Be concise by default. Use application context only when it helps interpret the request. When recent inserted text is provided, resolve references such as “that,” “it,” “the last sentence,” or requests to rewrite, format, shorten, expand, or change tone against that text. Never claim to perform actions outside this response; produce the text the user asked for instead.
     """
 
     private let model = SystemLanguageModel(
@@ -171,6 +171,8 @@ actor AppleFoundationModelsPostProcessor {
         appName: String?,
         windowTitle: String?,
         contextSummary: String,
+        selectedText: String?,
+        previousText: String?,
         vocabulary: [String],
         timeout: TimeInterval
     ) async throws -> SmartCleanupResponse {
@@ -184,20 +186,15 @@ actor AppleFoundationModelsPostProcessor {
         let trimmed = command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { throw SmartCleanupError.emptyOutput }
         let session = makeSession(instructions: Self.commandInstructions)
-        let vocabularyHint = vocabulary.isEmpty
-            ? ""
-            : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
-        let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
-        let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
-        let contextHint = contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? ""
-            : "Context: \(contextSummary.prefix(800))\n"
-        let prompt = """
-        \(appHint)\(windowHint)\(contextHint)\(vocabularyHint)SPOKEN REQUEST:
-        <request>
-        \(trimmed)
-        </request>
-        """
+        let prompt = Self.commandPrompt(
+            command: trimmed,
+            appName: appName,
+            windowTitle: windowTitle,
+            contextSummary: contextSummary,
+            selectedText: selectedText,
+            previousText: previousText,
+            vocabulary: vocabulary
+        )
         let started = ContinuousClock.now
         let output = try await respond(session: session, prompt: prompt, timeout: timeout)
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -207,6 +204,46 @@ actor AppleFoundationModelsPostProcessor {
             prompt: prompt,
             elapsed: started.duration(to: .now).timeInterval
         )
+    }
+
+    static func commandPrompt(
+        command: String,
+        appName: String?,
+        windowTitle: String?,
+        contextSummary: String,
+        selectedText: String?,
+        previousText: String?,
+        vocabulary: [String]
+    ) -> String {
+        let vocabularyHint = vocabulary.isEmpty
+            ? ""
+            : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
+        let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
+        let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
+        let contextHint = contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? ""
+            : "Context: \(contextSummary.prefix(800))\n"
+        let selectedTextHint = selectedText
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : "Current selected text: \($0.prefix(2_000))\n" }
+            ?? ""
+        let previousTextHint = previousText
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .flatMap { $0.isEmpty ? nil : """
+            RECENT TEXT INSERTED BY THE USER:
+            <previous_text>
+            \($0.prefix(2_000))
+            </previous_text>
+
+            """ }
+            ?? ""
+        let prompt = """
+        \(appHint)\(windowHint)\(contextHint)\(selectedTextHint)\(vocabularyHint)\(previousTextHint)SPOKEN REQUEST:
+        <request>
+        \(command.trimmingCharacters(in: .whitespacesAndNewlines))
+        </request>
+        """
+        return prompt
     }
 
     private func makeSession(instructions: String) -> LanguageModelSession {

@@ -21,6 +21,7 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 ### Added
 
 - Inline AI (Alpha): hold the normal dictation shortcut and begin with “Hey Megaphone” to ask a question or generate text directly in the active app, powered entirely by Apple's on-device Foundation Models framework.
+- Inline AI can now use a recent dictation in the same app as context, so follow-ups such as “Hey Megaphone, make that formal” rewrite the sentence you just entered.
 - An optional shorter “Megaphone” trigger and a master switch to turn Inline AI off completely.
 
 ### Improved

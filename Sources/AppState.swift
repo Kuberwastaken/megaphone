@@ -648,6 +648,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingMicrophonePermissionSelectionSnapshot: AppSelectionSnapshot?
     private var pendingMicrophonePermissionManualCommandRequested: Bool?
     private let postTranscriptionUpdateReminderDuration: TimeInterval = 7
+    private let wakeCommandPreviousTextWindow: TimeInterval = 120
 
     init() {
         UserDefaults.standard.removeObject(forKey: "force_http2_transcription")
@@ -2537,6 +2538,25 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @MainActor
+    private func recentTextForWakeCommand(in context: AppContext, now: Date) -> String? {
+        pipelineHistory.first { item in
+            let text = item.postProcessedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return false }
+            let age = now.timeIntervalSince(item.timestamp)
+            guard age >= 0, age <= wakeCommandPreviousTextWindow else { return false }
+
+            let previousBundleID = item.contextBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let currentBundleID = context.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let previousBundleID, !previousBundleID.isEmpty,
+               let currentBundleID, !currentBundleID.isEmpty,
+               previousBundleID != currentBundleID {
+                return false
+            }
+            return true
+        }?.postProcessedTranscript
+    }
+
     private func processTranscript(
         _ rawTranscript: String,
         intent: SessionIntent,
@@ -2549,6 +2569,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         cleanupMode: SmartCleanupMode,
         wakeCommandsEnabled: Bool,
         plainMegaphoneWakeWordEnabled: Bool,
+        previousText: String? = nil,
         smartSessionID: UUID? = nil
     ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
         let trimmedRawTranscript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2577,6 +2598,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     appName: context.appName,
                     windowTitle: context.windowTitle,
                     contextSummary: context.contextSummary,
+                    selectedText: context.selectedText,
+                    previousText: previousText,
                     vocabulary: vocabulary,
                     timeout: 5
                 )
@@ -2795,6 +2818,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     } else {
                         appContext = self.fallbackContextAtStop()
                     }
+                    let previousText = await MainActor.run {
+                        self.recentTextForWakeCommand(in: appContext, now: Date())
+                    }
                     try Task.checkCancellation()
                     await MainActor.run { [weak self] in
                         self?.debugStatusMessage = "Running post-processing"
@@ -2811,6 +2837,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         cleanupMode: self.smartCleanupMode,
                         wakeCommandsEnabled: self.wakeCommandsEnabled,
                         plainMegaphoneWakeWordEnabled: self.plainMegaphoneWakeWordEnabled,
+                        previousText: previousText,
                         smartSessionID: cleanupSessionID
                     )
                     try Task.checkCancellation()
