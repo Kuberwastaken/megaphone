@@ -957,16 +957,22 @@ final class UpdateManager: ObservableObject {
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
         process.arguments = ["-d", "-r-", app.path]
+        let outputPipe = Pipe()
         let errorPipe = Pipe()
-        process.standardOutput = Pipe()
+        process.standardOutput = outputPipe
         process.standardError = errorPipe
         try process.run()
         process.waitUntilExit()
 
-        let output = String(
-            data: errorPipe.fileHandleForReading.readDataToEndOfFile(),
-            encoding: .utf8
-        ) ?? ""
+        // `codesign` has emitted the designated requirement on stderr on
+        // older macOS versions and stdout on newer ones. Read both; otherwise
+        // a valid update can be rejected simply because the tool changed
+        // which stream it uses.
+        let outputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+        let errorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+        let output = [outputData, errorData]
+            .compactMap { String(data: $0, encoding: .utf8) }
+            .joined(separator: "\n")
         guard process.terminationStatus == 0,
               let requirement = output.components(separatedBy: .newlines)
                 .first(where: { $0.hasPrefix("designated => ") }) else {
