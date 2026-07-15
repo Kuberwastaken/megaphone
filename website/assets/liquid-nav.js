@@ -74,7 +74,7 @@
     const observer=new ResizeObserver(rebuild);observer.observe(element);const instance={rebuild,destroy(){observer.disconnect();filter?.remove();layer.remove()}};targets.set(element,instance);rebuild();return instance;
   }
 
-  applyGlass(nav,navConfig);applyGlass(lens,lensConfig);
+  applyGlass(nav,navConfig);applyGlass(lens,lensConfig);nav.querySelectorAll('.nav-github,.nav-download').forEach(control=>applyGlass(control,lensConfig));
 
   const threshold=6,overshoot=22;let active=Math.max(0,items.findIndex(item=>item.classList.contains('active'))),target=active,pointer=null,startX=0,startY=0,dragging=false,itemWidth=0,finishTimer;
   const metrics=index=>({left:items[index].offsetLeft,width:items[index].offsetWidth,center:items[index].offsetLeft+items[index].offsetWidth/2});
@@ -89,9 +89,6 @@
   function settle(){center.classList.remove('dragging');setActive(target);snap(target);finishTimer=setTimeout(()=>{lens.classList.remove('interacting');nav.classList.remove('engaged');nav.style.setProperty('--ga',0)},500)}
   function end(event){if(event.pointerId!==pointer)return;clear();settle();pointer=null;dragging=false}
   function cancel(event){if(event.pointerId!==pointer)return;clear();target=active;snap(active);settle();pointer=null;dragging=false}
-  items.forEach((item,index)=>item.addEventListener('pointerdown',event=>{if(!event.isPrimary||event.button!==0)return;event.preventDefault();begin(event,index)}));
-
-  const sections=[document.querySelector('#top'),document.querySelector('#settings'),document.querySelector('#privacy')];let frame=false;
-  function sync(){frame=false;if(pointer!==null)return;const marker=scrollY+innerHeight*.28;let index=0;sections.forEach((section,i)=>{if(section&&section.offsetTop<=marker)index=i});target=index;setActive(index);snap(index)}
-  addEventListener('scroll',()=>{if(!frame){frame=true;requestAnimationFrame(sync)}},{passive:true});addEventListener('resize',()=>snap(active,false));requestAnimationFrame(()=>snap(active,false));
+  items.forEach((item,index)=>{item.addEventListener('pointerdown',event=>{if(!event.isPrimary||event.button!==0)return;event.preventDefault();begin(event,index)});item.addEventListener('focus',()=>{target=index;setActive(index);snap(index)})});
+  addEventListener('resize',()=>snap(active,false));requestAnimationFrame(()=>snap(active,false));
 })();
