@@ -10,6 +10,12 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.4] - 2026-07-15
+
+### Fixed
+
+- Opening Megaphone on macOS 15 or earlier now shows a clear message that macOS 26 (Tahoe) is required, with a button that opens Software Update, instead of Launch Services rejecting the app with the opaque error -10825. The app now starts through a small launcher that hands off to the real Megaphone binary on macOS 26 and later. (#1)
+
 ## [1.1.3] - 2026-07-15
 
 ### Added

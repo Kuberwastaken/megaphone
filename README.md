@@ -57,6 +57,8 @@ Megaphone is a fork of the excellent [FreeFlow](https://github.com/zachlatta/fre
 4. Launch it, walk through setup, and grant the microphone and accessibility permissions.
 5. Hold `Fn` and start talking. Apple's speech model for your language downloads automatically the first time you use it.
 
+If your Mac is on macOS 15 or earlier, Megaphone opens with a message explaining that macOS 26 is required — SpeechAnalyzer only exists on macOS 26 (Tahoe) and later, so there is unfortunately no way to support older systems.
+
 Getting macOS to *not* scream about an app requires notarization, and notarization requires a $99/year Apple Developer membership. Sooo
 
 **Option 1 — one command.** Clear the quarantine flag before opening the DMG:
