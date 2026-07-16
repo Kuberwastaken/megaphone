@@ -135,6 +135,24 @@ make        # requires Xcode 26 and the macOS 26 SDK
 make run
 ```
 
+## Built with Codex CLI
+
+I built Megaphone for the **OpenAI Build Week hackathon**, primarily with **Codex CLI using GPT-5.6 (Sol)**. I varied the reasoning effort with the job: lower effort for copy, UI polish, and mechanical refactors; medium effort for features such as the Dictionary and wake-command system; and higher effort for streaming audio, Swift concurrency, cancellation, model isolation, updater safety, signing, and cross-file debugging.
+
+The workflow ended up being one of my favourite parts of the project. Codex CLI ran on a headless Raspberry Pi while Megaphone ran on my Mac. I would describe the behaviour and constraints, let Codex inspect the repository, make a focused change, compile or test it on the Mac over SSH, read the real failure, and keep iterating against the actual codebase. Sequential commits kept every step understandable and reversible.
+
+Subagents were especially useful when the work separated cleanly: one could trace the updater or research an Apple framework while another handled documentation or a visual asset. The main agent still had to reconcile those findings, run the build, and verify the result. That distinction mattered—the subagents made investigation wider, but tests and the real app decided whether a change was done.
+
+A few things I learned along the way:
+
+* **Match reasoning effort to risk.** A wording tweak does not need the same deliberation as an audio cancellation race or an update that replaces a signed app bundle.
+* **Give the agent access to the real environment.** Simulator-free Mac builds, codesign output, Accessibility behaviour, updater logs, screenshots, and the live website caught problems that code review alone could not.
+* **Describe behaviour, not just implementation.** “Let me say ‘Hey Megaphone, make that formal’ immediately after a dictation” led to a better design than prescribing a new variable or prompt: recent same-app text, selection, and screen context became one bounded command context.
+* **Keep deterministic escape hatches.** Smart Cleanup has a plain-code fallback, wake words use explicit aliases with false-positive tests, and release metadata now comes from GitHub during deployment instead of being copied by hand.
+* **Small commits make ambitious iteration safer.** The app, updater, release pipeline, website, demo media, signing flow, and documentation all changed quickly without turning into one impossible diff.
+
+Codex was most helpful as a persistent engineering collaborator: it could hold the constraints of the whole system, move between Swift, shell scripts, GitHub Actions, and frontend code, and continue from the evidence produced by the previous attempt. I still chose the product, judged the feel, supplied recordings and screenshots, and decided what shipped; Codex made the loop from idea to tested change unusually short—and genuinely fun.
+
 ## Credits
 
 Megaphone is built on top of [**FreeFlow**](https://github.com/zachlatta/freeflow).
