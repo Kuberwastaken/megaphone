@@ -6,7 +6,11 @@ on:
       - main
     paths:
       - "website/**"
+      - ".github/scripts/hydrate-website-release.mjs"
       - ".github/workflows/pages.yml"
+  release:
+    types:
+      - published
   workflow_dispatch:
 
 permissions:
@@ -27,6 +31,8 @@ jobs:
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Build website with latest release
         env:

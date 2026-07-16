@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  actions: write
 
 jobs:
   build-and-release:
@@ -183,6 +184,11 @@ jobs:
           make_latest: true
           files: |
             Megaphone.dmg
+
+      - name: Refresh release information on website
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run pages.yml --ref main
 
       # --- Cleanup ---
       - name: Cleanup signing artifacts
