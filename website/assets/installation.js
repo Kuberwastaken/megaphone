@@ -28,15 +28,19 @@
   copyButton?.addEventListener('click', async () => {
     try {
       await navigator.clipboard.writeText(command?.textContent.trim() || '');
-      copyButton.textContent = 'Copied';
-      setTimeout(() => { copyButton.textContent = 'Copy command'; }, 1600);
+      copyButton.classList.add('copied');
+      copyButton.setAttribute('aria-label', 'Install command copied');
+      setTimeout(() => {
+        copyButton.classList.remove('copied');
+        copyButton.setAttribute('aria-label', 'Copy one-line install command');
+      }, 1600);
     } catch {
       const selection = getSelection();
       const range = document.createRange();
       range.selectNodeContents(command);
       selection.removeAllRanges();
       selection.addRange(range);
-      copyButton.textContent = 'Select and copy';
+      copyButton.setAttribute('aria-label', 'Command selected; press Command C to copy');
     }
   });
 
