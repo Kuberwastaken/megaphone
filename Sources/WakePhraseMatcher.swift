@@ -94,19 +94,43 @@ struct WakePhraseMatcher {
     private static let phraseSeparator = #"[\s\p{P}\p{S}]+"#
     private static let phraseBoundary = #"(?=$|[\s\p{P}\p{S}])"#
 
-    // SpeechAnalyzer occasionally segments the product name ("mega phone")
-    // or hears it phonetically ("made a phone"). These aliases are accepted
-    // only as a leading trigger, so they never rewrite ordinary dictation.
-    private static let megaphoneVariants = "(?:megaphone|mega" + phraseSeparator
-        + "phone|made" + phraseSeparator + "a" + phraseSeparator + "phone)"
-    private static let heyVariants = "(?:hey|he)"
+    // Keep recognition aliases here rather than in SpeechAnalyzer's custom
+    // vocabulary. Vocabulary hints should teach the correct product spelling;
+    // these hidden aliases only recover common acoustic substitutions after
+    // transcription. Fuzzy forms require the leading “Hey” phrase so enabling
+    // the optional plain trigger cannot turn “make a phone call” into a command.
+    private static let strictMegaphoneVariants = "(?:megaphone|mega" + phraseSeparator + "phone)"
+    private static let fuzzyMegaphoneVariants = "(?:" + [
+        strictMegaphoneVariants,
+        "mega" + phraseSeparator + "fone",
+        "mega" + phraseSeparator + "foam",
+        "mega" + phraseSeparator + "form",
+        "mega" + phraseSeparator + "phoned",
+        "megha" + phraseSeparator + "phone",
+        "mecca" + phraseSeparator + "phone",
+        "mecha" + phraseSeparator + "phone",
+        "meg" + phraseSeparator + "a" + phraseSeparator + "phone",
+        "make" + phraseSeparator + "a" + phraseSeparator + "phone",
+        "made" + phraseSeparator + "a" + phraseSeparator + "phone",
+        "make" + phraseSeparator + "the" + phraseSeparator + "phone",
+        "made" + phraseSeparator + "the" + phraseSeparator + "phone",
+        "make" + phraseSeparator + "phone",
+        "made" + phraseSeparator + "phone",
+        "make" + phraseSeparator + "a" + phraseSeparator + "foam",
+        "made" + phraseSeparator + "a" + phraseSeparator + "foam",
+        "make" + phraseSeparator + "a" + phraseSeparator + "form",
+        "made" + phraseSeparator + "a" + phraseSeparator + "form",
+        "make" + phraseSeparator + "up" + phraseSeparator + "phone",
+        "made" + phraseSeparator + "up" + phraseSeparator + "phone"
+    ].joined(separator: "|") + ")"
+    private static let heyVariants = "(?:hey|he|hay|hi)"
 
     private static let heyPattern = try! NSRegularExpression(
-        pattern: leadingSeparators + heyVariants + phraseSeparator + megaphoneVariants + phraseBoundary,
+        pattern: leadingSeparators + heyVariants + phraseSeparator + fuzzyMegaphoneVariants + phraseBoundary,
         options: [.caseInsensitive]
     )
     private static let plainPattern = try! NSRegularExpression(
-        pattern: leadingSeparators + megaphoneVariants + phraseBoundary,
+        pattern: leadingSeparators + strictMegaphoneVariants + phraseBoundary,
         options: [.caseInsensitive]
     )
     private static let trailingSeparators = CharacterSet.whitespacesAndNewlines

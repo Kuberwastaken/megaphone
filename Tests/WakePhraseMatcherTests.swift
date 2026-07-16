@@ -40,8 +40,22 @@ enum WakePhraseMatcherTests {
         let alwaysOn = [
             "hey mega phone, write this",
             "hey made a phone, write this",
+            "hey make a phone, write this",
             "he megaphone, write this",
-            "he made a phone, write this"
+            "he made a phone, write this",
+            "hay mega foam, write this",
+            "hi mega form, write this",
+            "hey mecca phone, write this",
+            "hey mecha phone, write this",
+            "hey megha phone, write this",
+            "hey meg a phone, write this",
+            "hey make phone, write this",
+            "hey made phone, write this",
+            "hey make the phone, write this",
+            "hey made the phone, write this",
+            "hey make a foam, write this",
+            "hey made a form, write this",
+            "hey make up phone, write this"
         ]
         for transcript in alwaysOn {
             expectEqual(
@@ -51,11 +65,19 @@ enum WakePhraseMatcherTests {
             )
         }
 
-        for transcript in ["mega phone, write this", "made a phone, write this"] {
+        for transcript in ["mega phone, write this"] {
             expectEqual(WakePhraseMatcher.detect(in: transcript), nil)
             expectEqual(
                 WakePhraseMatcher.detect(in: transcript, plainMegaphoneEnabled: true),
                 WakePhraseMatch(phrase: .megaphone, trailingText: "write this")
+            )
+        }
+
+        for transcript in ["make a phone call", "made a phone call", "mega foam, write this"] {
+            expectEqual(
+                WakePhraseMatcher.detect(in: transcript, plainMegaphoneEnabled: true),
+                nil,
+                "Fuzzy alias escaped the Hey-only guard for \(transcript.debugDescription)"
             )
         }
     }
