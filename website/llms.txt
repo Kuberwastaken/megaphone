@@ -3,6 +3,8 @@
 > Megaphone is a free, open-source, native macOS dictation app powered entirely by Apple's on-device SpeechAnalyzer and Foundation Models frameworks.
 
 Website: https://megaphone.kuber.studio/
+Latest release: Megaphone __MEGAPHONE_VERSION__ (__MEGAPHONE_RELEASE_DATE__)
+Latest shipped change: __MEGAPHONE_RELEASE_HIGHLIGHT__
 Source: https://github.com/Kuberwastaken/megaphone
 Download: https://github.com/Kuberwastaken/megaphone/releases/latest/download/Megaphone.dmg
 License: MIT

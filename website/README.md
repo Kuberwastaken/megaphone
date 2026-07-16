@@ -23,3 +23,5 @@ Then open `http://localhost:4173`.
 ## Deploy
 
 Serve `website/` at `https://megaphone.kuber.studio/`. The canonical URL, sitemap, structured data, and download links already target that domain.
+
+GitHub Pages builds a temporary `_site` directory and hydrates release placeholders from GitHub's latest stable release. The current version, publication date, DMG URL, release URL, structured data, and release-note demo therefore update automatically whenever the site deploys after a new release.

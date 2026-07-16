@@ -2,7 +2,7 @@
   body { min-width: 0; }
   main,section,.wrap,.inline-grid,.feature-bento,.bento-card,.awareness-demo,.model-window { min-width:0; max-width:100%; }
   .wrap { width:calc(100% - 44px); }
-  section { padding:88px 0; }
+  section { padding:72px 0; }
   .head { display:block; margin-bottom:32px; }
   .head h2,.feature-copy h2 { font-size:clamp(38px,11vw,52px); line-height:.98; }
   .head p,.feature-copy p { margin-top:18px; font-size:16px; line-height:1.52; }
@@ -14,13 +14,13 @@
   .liquid-nav .nav-github { width:48px; }
   .liquid-nav .nav-download { padding:0 14px; }
 
-  .hero { height:auto; min-height:760px; max-height:none; padding-top:74px; }
+  .hero { height:auto; min-height:660px; max-height:none; padding-top:64px; }
   .hero h1 { font-size:clamp(48px,14vw,66px); line-height:.92; }
   .hero p { width:min(100%,390px); margin-top:22px; font-size:16px; line-height:1.48; }
   .actions { width:100%; margin:25px auto 0; gap:9px; align-items:center; }
   .hero-button { width:min(310px,100%); height:48px; margin-inline:auto; }
   .requirements { padding:0 12px; }
-  .hero-visual { height:315px; }
+  .hero-visual { height:255px; }
 
   .inline-grid { display:grid; grid-template-columns:1fr; gap:14px; }
   .editor-demo,.agent-terminal { width:100%; min-height:0; }
@@ -41,15 +41,15 @@
   .feature-bento { width:calc(100% - 44px); margin-inline:auto; display:flex; flex-direction:column; gap:14px; }
   .bento-card { flex:none; width:100%; border-radius:12px; }
   .cleanup-card { height:520px; }
-  .languages-card { height:390px; }
+  .languages-card { height:320px; }
   .dictionary-card { height:auto; min-height:390px; }
   .memory-card { height:auto; min-height:390px; }
   .bento-copy,.dictionary-card .bento-copy,.memory-card .bento-copy { padding:23px 22px; }
   .bento-copy h3 { font-size:24px; }
   .bento-copy p { font-size:13px; }
   .cleanup-stream { inset:100px 14px 14px; padding:20px 18px; font-size:20px; line-height:1.48; }
-  .language-stack { inset:100px 0 18px; gap:9px; }
-  .language-stack .language-lane span { min-width:152px; height:54px; padding:0 12px; font-size:13px; }
+  .language-stack { inset:92px 0 14px; gap:7px; }
+  .language-stack .language-lane span { min-width:146px; height:46px; padding:0 11px; font-size:12px; }
   .language-stack .language-lane b { font-size:18px; }
   .dictionary-list,.memory-lines { margin:0 14px 16px; min-height:0; }
   .dictionary-list > div { padding:12px; }
