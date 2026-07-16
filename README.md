@@ -137,21 +137,21 @@ make run
 
 ## Built with Codex CLI
 
-I built Megaphone for the **OpenAI Build Week hackathon**, primarily with **Codex CLI using GPT-5.6 (Sol)**. I varied the reasoning effort with the job: lower effort for copy, UI polish, and mechanical refactors; medium effort for features such as the Dictionary and wake-command system; and higher effort for streaming audio, Swift concurrency, cancellation, model isolation, updater safety, signing, and cross-file debugging.
+I built Megaphone for the **OpenAI Build Week hackathon**, mostly with **Codex CLI using GPT-5.6 (Sol)**. I changed the reasoning effort depending on the task. Lower effort was plenty for copy, UI polish, and straightforward refactors. I used medium effort for features like the Dictionary and wake commands, then higher effort for streaming audio, Swift concurrency, cancellation, updater safety, signing, and bugs spread across a bunch of files.
 
-The workflow ended up being one of my favourite parts of the project. Codex CLI ran on a headless Raspberry Pi while Megaphone ran on my Mac. I would describe the behaviour and constraints, let Codex inspect the repository, make a focused change, compile or test it on the Mac over SSH, read the real failure, and keep iterating against the actual codebase. Sequential commits kept every step understandable and reversible.
+The setup was really fun. Codex CLI ran on a headless Raspberry Pi and Megaphone ran on my Mac. I would explain what I wanted and what could not break. Codex would inspect the repo, make a change, build or test it on the Mac over SSH, read the failure, and try again. We kept everything in small commits, so it was always easy to see what changed or undo one part.
 
-Subagents were especially useful when the work separated cleanly: one could trace the updater or research an Apple framework while another handled documentation or a visual asset. The main agent still had to reconcile those findings, run the build, and verify the result. That distinction mattered—the subagents made investigation wider, but tests and the real app decided whether a change was done.
+Subagents were great when the work split naturally. One could dig through updater logs or Apple docs while another worked on the README or a visual. The main agent still had to put it together, run the build, and check the real app. That part mattered. A convincing answer was not enough if the app did not work.
 
-A few things I learned along the way:
+Some things that worked well:
 
-* **Match reasoning effort to risk.** A wording tweak does not need the same deliberation as an audio cancellation race or an update that replaces a signed app bundle.
-* **Give the agent access to the real environment.** Simulator-free Mac builds, codesign output, Accessibility behaviour, updater logs, screenshots, and the live website caught problems that code review alone could not.
-* **Describe behaviour, not just implementation.** “Let me say ‘Hey Megaphone, make that formal’ immediately after a dictation” led to a better design than prescribing a new variable or prompt: recent same-app text, selection, and screen context became one bounded command context.
-* **Keep deterministic escape hatches.** Smart Cleanup has a plain-code fallback, wake words use explicit aliases with false-positive tests, and release metadata now comes from GitHub during deployment instead of being copied by hand.
-* **Small commits make ambitious iteration safer.** The app, updater, release pipeline, website, demo media, signing flow, and documentation all changed quickly without turning into one impossible diff.
+* **Use more reasoning where mistakes are expensive.** A copy change does not need the same attention as an audio cancellation bug or an updater replacing a signed app.
+* **Test on the real machine.** Mac builds, codesign output, Accessibility behaviour, updater logs, screenshots, and the live website caught things that looked completely fine in the code.
+* **Explain the behaviour you want.** Saying “I want to dictate a sentence, then say ‘Hey Megaphone, make that formal’” led to a much better solution than telling it which variable to add.
+* **Keep a boring fallback.** Smart Cleanup still has a deterministic pass. Wake-word aliases have tests for false positives. The website pulls release information from GitHub instead of relying on me to update it every time.
+* **Commit small changes.** We changed the app, updater, website, signing, releases, demo media, and docs without ending up with one giant diff nobody could understand.
 
-Codex was most helpful as a persistent engineering collaborator: it could hold the constraints of the whole system, move between Swift, shell scripts, GitHub Actions, and frontend code, and continue from the evidence produced by the previous attempt. I still chose the product, judged the feel, supplied recordings and screenshots, and decided what shipped; Codex made the loop from idea to tested change unusually short—and genuinely fun.
+Codex was most useful because it could keep moving between Swift, shell scripts, GitHub Actions, and the website without losing the thread. I still chose what to build, judged how it felt, recorded the demos, sent screenshots, and decided what shipped. Codex made the gap between an idea and a tested version much shorter. It was also just a lot of fun to build this way.
 
 ## Credits
 
