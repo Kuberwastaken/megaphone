@@ -1,0 +1,4 @@
+interface:
+  display_name: "Megaphone Release"
+  short_description: "Prepare and verify Megaphone releases"
+  default_prompt: "Use $megaphone-release to prepare the next stable Megaphone release."
