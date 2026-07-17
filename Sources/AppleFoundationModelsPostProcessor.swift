@@ -65,7 +65,7 @@ actor AppleFoundationModelsPostProcessor {
     Treat the selected text as the only source material and the spoken command as the requested transformation. Preserve the original language unless translation is explicitly requested. Do not answer unrelated questions or invent unrelated content.
     """
     private static let commandInstructions = """
-    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Be concise by default. Use application context only when it helps interpret the request. When recent inserted text is provided, resolve references such as “that,” “it,” “the last sentence,” or requests to rewrite, format, shorten, expand, or change tone against that text. Never claim to perform actions outside this response; produce the text the user asked for instead.
+    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Never wrap the result in XML or HTML tags such as <response>. Be concise by default. Use application context only when it helps interpret the request. When recent inserted text is provided, resolve references such as “that,” “it,” “the last sentence,” or requests to rewrite, format, shorten, expand, or change tone against that text. Never claim to perform actions outside this response; produce the text the user asked for instead.
     """
 
     private let model = SystemLanguageModel(
@@ -156,8 +156,9 @@ actor AppleFoundationModelsPostProcessor {
         </command>
         """
         let started = ContinuousClock.now
-        let output = try await respond(session: session, prompt: prompt, timeout: timeout)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = Self.normalizeCommandOutput(
+            try await respond(session: session, prompt: prompt, timeout: timeout)
+        )
         try Self.validate(output, source: selectedText, allowsExpansion: true)
         return SmartCleanupResponse(
             text: output,
@@ -244,6 +245,24 @@ actor AppleFoundationModelsPostProcessor {
         </request>
         """
         return prompt
+    }
+
+    static func normalizeCommandOutput(_ raw: String) -> String {
+        var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+
+        while !value.isEmpty {
+            let before = value
+            if let opening = value.range(of: #"^<response\s*>\s*"#, options: options) {
+                value.removeSubrange(opening)
+            }
+            if let closing = value.range(of: #"\s*</response\s*>$"#, options: options) {
+                value.removeSubrange(closing)
+            }
+            value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+            if value == before { break }
+        }
+        return value
     }
 
     private func makeSession(instructions: String) -> LanguageModelSession {

@@ -7,6 +7,7 @@ struct AppContextServiceTests {
         testQwenReasoningOutputIsStripped()
         testNonStrippingModelPreservesExistingBehavior()
         testWakeCommandIncludesPreviousTextAndScreenContext()
+        testWakeCommandResponseWrappersAreRemoved()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
@@ -73,6 +74,26 @@ struct AppContextServiceTests {
         expect(prompt.contains("Context: The user is composing an email reply."), "Screen context missing")
         expect(prompt.contains("Current selected text: Earlier text selected in the draft."), "Selected screen text missing")
         expect(prompt.contains("make that formal"), "Spoken follow-up missing")
+    }
+
+    private static func testWakeCommandResponseWrappersAreRemoved() {
+        let cases = [
+            ("<response>Hello</response>", "Hello"),
+            ("  <RESPONSE >\nHello\n</Response >  ", "Hello"),
+            ("<response><response>Hello</response></response>", "Hello"),
+            ("<response>Hello", "Hello"),
+            ("Hello</response>", "Hello"),
+            ("Use <response> as the element name.", "Use <response> as the element name."),
+            ("ordinary text", "ordinary text"),
+            ("<response></response>", "")
+        ]
+
+        for (raw, expected) in cases {
+            expectEqual(
+                AppleFoundationModelsPostProcessor.normalizeCommandOutput(raw),
+                expected
+            )
+        }
     }
 
     private static func expectEqual(_ actual: String?, _ expected: String, file: StaticString = #file, line: UInt = #line) {
