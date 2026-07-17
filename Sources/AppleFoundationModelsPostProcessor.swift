@@ -60,13 +60,13 @@ enum AppWritingContext: String, Equatable, Sendable {
         let identity = "\(app) \(bundle)"
         let all = "\(identity) \(title)"
 
-        if identity.contains("slack") || identity.contains("msteams") || identity.contains("microsoft teams") {
+        if all.contains("slack") || all.contains("msteams") || all.contains("microsoft teams") {
             return .workChat
         }
-        if identity.contains("discord") || bundle.contains("com.apple.mobilesms") || app == "messages" {
+        if all.contains("discord") || bundle.contains("com.apple.mobilesms") || app == "messages" {
             return .casualChat
         }
-        if bundle.contains("com.apple.mail") || identity.contains("outlook") || all.contains("gmail") {
+        if bundle.contains("com.apple.mail") || app == "mail" || all.contains("outlook") || all.contains("gmail") {
             return .email
         }
         let codeApps = [
@@ -194,7 +194,7 @@ actor AppleFoundationModelsPostProcessor {
         let started = ContinuousClock.now
         let responseText = try await respond(session: session, prompt: prompt, timeout: timeout)
         let elapsed = started.duration(to: .now).timeInterval
-        let cleaned = responseText.trimmingCharacters(in: .whitespacesAndNewlines)
+        let cleaned = Self.normalizeCommandOutput(responseText)
         try Self.validate(cleaned, source: request.transcript)
         return SmartCleanupResponse(text: cleaned, prompt: prompt, elapsed: elapsed)
     }
@@ -203,6 +203,8 @@ actor AppleFoundationModelsPostProcessor {
         selectedText: String,
         command: String,
         appName: String?,
+        bundleIdentifier: String?,
+        windowTitle: String?,
         vocabulary: [String],
         sessionID: UUID?,
         timeout: TimeInterval
@@ -216,21 +218,14 @@ actor AppleFoundationModelsPostProcessor {
         let session = sessionID.flatMap { preparedSessions.removeValue(forKey: $0) }
             ?? makeSession(instructions: Self.editInstructions)
         preparedSessions.removeAll()
-        let vocabularyHint = vocabulary.isEmpty
-            ? ""
-            : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
-        let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
-        let prompt = """
-        \(appHint)\(vocabularyHint)SELECTED TEXT:
-        <selected_text>
-        \(selectedText)
-        </selected_text>
-
-        SPOKEN EDITING COMMAND:
-        <command>
-        \(command)
-        </command>
-        """
+        let prompt = Self.selectionPrompt(
+            selectedText: selectedText,
+            command: command,
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            windowTitle: windowTitle,
+            vocabulary: vocabulary
+        )
         let started = ContinuousClock.now
         let output = Self.normalizeCommandOutput(
             try await respond(session: session, prompt: prompt, timeout: timeout)
@@ -241,6 +236,40 @@ actor AppleFoundationModelsPostProcessor {
             prompt: prompt,
             elapsed: started.duration(to: .now).timeInterval
         )
+    }
+
+    static func selectionPrompt(
+        selectedText: String,
+        command: String,
+        appName: String?,
+        bundleIdentifier: String?,
+        windowTitle: String?,
+        vocabulary: [String]
+    ) -> String {
+        let vocabularyHint = vocabulary.isEmpty
+            ? ""
+            : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
+        let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
+        let bundleHint = bundleIdentifier.map { "Destination bundle: \($0.prefix(160))\n" } ?? ""
+        let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
+        let writingContext = AppWritingContext.classify(
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            windowTitle: windowTitle
+        )
+        return """
+        \(appHint)\(bundleHint)\(windowHint)Writing context: \(writingContext.label)
+        App-aware guidance: Apply this only when the spoken editing command does not specify another style. \(writingContext.cleanupGuidance)
+        \(vocabularyHint)SELECTED TEXT:
+        <selected_text>
+        \(selectedText)
+        </selected_text>
+
+        SPOKEN EDITING COMMAND:
+        <command>
+        \(command)
+        </command>
+        """
     }
 
     func executeCommand(

@@ -2553,6 +2553,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
                previousBundleID != currentBundleID {
                 return false
             }
+
+            let previousWindowTitle = item.contextWindowTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let currentWindowTitle = context.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+            if let previousWindowTitle, !previousWindowTitle.isEmpty,
+               let currentWindowTitle, !currentWindowTitle.isEmpty,
+               previousWindowTitle.caseInsensitiveCompare(currentWindowTitle) != .orderedSame {
+                return false
+            }
             return true
         }?.postProcessedTranscript
     }
@@ -2625,6 +2633,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     selectedText: selectedText,
                     command: rawTranscript,
                     appName: context.appName,
+                    bundleIdentifier: context.bundleIdentifier,
+                    windowTitle: context.windowTitle,
                     vocabulary: vocabulary,
                     sessionID: smartSessionID,
                     timeout: 4

@@ -10,6 +10,7 @@ struct AppContextServiceTests {
         testWakeCommandResponseWrappersAreRemoved()
         testAppWritingContextClassification()
         testCleanupPromptUsesLocalAppStyle()
+        testSelectionPromptUsesDestinationContext()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
@@ -102,6 +103,14 @@ struct AppContextServiceTests {
             AppWritingContext.classify(appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Roadmap - Google Docs") == .document,
             "Google Docs should use document writing context"
         )
+        expect(
+            AppWritingContext.classify(appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Megaphone | Slack") == .workChat,
+            "Slack in a browser should use work-chat writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Discord | #general") == .casualChat,
+            "Discord in a browser should use casual-chat writing context"
+        )
     }
 
     private static func testCleanupPromptUsesLocalAppStyle() {
@@ -122,6 +131,22 @@ struct AppContextServiceTests {
         expect(prompt.contains("Writing context: work chat"), "Cleanup prompt lost Slack context")
         expect(prompt.contains("concise, professional chat formatting"), "Slack cleanup guidance missing")
         expect(prompt.contains("do not make the message more formal unless asked"), "Cleanup should preserve tone")
+    }
+
+    private static func testSelectionPromptUsesDestinationContext() {
+        let prompt = AppleFoundationModelsPostProcessor.selectionPrompt(
+            selectedText: "can we ship this tomorrow",
+            command: "make this clearer",
+            appName: "Mail",
+            bundleIdentifier: "com.apple.mail",
+            windowTitle: "Draft — Launch",
+            vocabulary: ["Megaphone"]
+        )
+
+        expect(prompt.contains("Destination bundle: com.apple.mail"), "Edit prompt lost bundle context")
+        expect(prompt.contains("Window: Draft — Launch"), "Edit prompt lost window context")
+        expect(prompt.contains("Writing context: email"), "Edit prompt lost email style")
+        expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Edit prompt lost email safety")
     }
 
     private static func testWakeCommandResponseWrappersAreRemoved() {
