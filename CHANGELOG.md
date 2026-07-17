@@ -30,6 +30,7 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - App-specific context now reaches Edit Mode as well as Smart Cleanup and Inline AI.
 - Update checks now use Megaphone’s release manifest instead of GitHub’s shared unauthenticated API quota, preventing false “GitHub returned status 403” failures on rate-limited networks.
 - The GitHub API remains available as a fallback and reports a clear rate-limit message with the local reset time when GitHub rejects a request.
+- Hey Megaphone and Edit Mode no longer fail with an unsupported-language error when app-aware context contains a macOS bundle identifier.
 
 ## [1.1.4] - 2026-07-15
 
