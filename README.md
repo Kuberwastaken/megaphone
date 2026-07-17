@@ -47,7 +47,7 @@ Apple had quietly shipped a genuinely excellent speech model as part of macOS, b
 
 That felt a little silly, so I built Megaphone.
 
-Megaphone is a fork of the excellent [FreeFlow](https://github.com/zachlatta/freeflow). I removed its cloud transcription stack and rebuilt that part of the app around Apple's SpeechAnalyzer.
+Megaphone started from [FreeFlow](https://github.com/zachlatta/freeflow) at [its final shared PR, #250](https://github.com/zachlatta/freeflow/pull/250). I inherited the `Fn` hold shortcut and dictation surface, then took the app in a different direction. I replaced the cloud transcription stack with streaming Apple SpeechAnalyzer and added Apple Foundation Models cleanup and inline commands, Dictionary learning, wake-phrase handling, a deterministic fallback, test coverage, updater hardening, the compatibility launcher, the website, and release automation.
 
 ## Installing-Manual
 
@@ -155,9 +155,9 @@ Codex was most useful because it could keep moving between Swift, shell scripts,
 
 ## Credits
 
-Megaphone is built on top of [**FreeFlow**](https://github.com/zachlatta/freeflow).
+Megaphone started from [**FreeFlow**](https://github.com/zachlatta/freeflow) at [PR #250](https://github.com/zachlatta/freeflow/pull/250), the last FreeFlow PR in our shared history. The `Fn` hold shortcut and original dictation surface came from FreeFlow.
 
-A huge thank you to [**Zach Latta**](https://github.com/zachlatta), [@marcbodea](https://github.com/marcbodea), and everyone who has contributed to FreeFlow. The dictation interface, shortcut system, context-aware cleanup, and Edit Mode all started with their work.
+A huge thank you to [**Zach Latta**](https://github.com/zachlatta), [@marcbodea](https://github.com/marcbodea), and everyone who has contributed to FreeFlow.
 
 If you need a cloud-provider-based dictation app that supports older versions of macOS or Intel Macs, use FreeFlow. It's excellent.
 
