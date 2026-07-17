@@ -2596,6 +2596,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 let result = try await AppleFoundationModelsPostProcessor.shared.executeCommand(
                     command,
                     appName: context.appName,
+                    bundleIdentifier: context.bundleIdentifier,
                     windowTitle: context.windowTitle,
                     contextSummary: context.contextSummary,
                     selectedText: context.selectedText,
@@ -2654,6 +2655,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             let request = SmartCleanupRequest(
                 transcript: trimmedRawTranscript,
                 appName: context.appName,
+                bundleIdentifier: context.bundleIdentifier,
                 windowTitle: context.windowTitle,
                 selectedText: context.selectedText,
                 contextSummary: context.contextSummary,

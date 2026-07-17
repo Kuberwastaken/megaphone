@@ -8,6 +8,8 @@ struct AppContextServiceTests {
         testNonStrippingModelPreservesExistingBehavior()
         testWakeCommandIncludesPreviousTextAndScreenContext()
         testWakeCommandResponseWrappersAreRemoved()
+        testAppWritingContextClassification()
+        testCleanupPromptUsesLocalAppStyle()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
@@ -60,6 +62,7 @@ struct AppContextServiceTests {
         let prompt = AppleFoundationModelsPostProcessor.commandPrompt(
             command: "make that formal",
             appName: "Mail",
+            bundleIdentifier: "com.apple.mail",
             windowTitle: "Draft — Project update",
             contextSummary: "The user is composing an email reply.",
             selectedText: "Earlier text selected in the draft.",
@@ -70,10 +73,55 @@ struct AppContextServiceTests {
         expect(prompt.contains("RECENT TEXT INSERTED BY THE USER:"), "Previous-text label missing")
         expect(prompt.contains("hey, can you send this over by friday?"), "Previous dictation missing")
         expect(prompt.contains("Destination app: Mail"), "Destination app context missing")
+        expect(prompt.contains("Writing context: email"), "Email writing context missing")
+        expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Safe email guidance missing")
         expect(prompt.contains("Window: Draft — Project update"), "Window context missing")
         expect(prompt.contains("Context: The user is composing an email reply."), "Screen context missing")
         expect(prompt.contains("Current selected text: Earlier text selected in the draft."), "Selected screen text missing")
         expect(prompt.contains("make that formal"), "Spoken follow-up missing")
+    }
+
+    private static func testAppWritingContextClassification() {
+        expect(
+            AppWritingContext.classify(appName: "Mail", bundleIdentifier: "com.apple.mail", windowTitle: nil) == .email,
+            "Mail should use email writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Slack", bundleIdentifier: "com.tinyspeck.slackmacgap", windowTitle: nil) == .workChat,
+            "Slack should use work-chat writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Discord", bundleIdentifier: "com.hnc.Discord", windowTitle: nil) == .casualChat,
+            "Discord should use casual-chat writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Terminal", bundleIdentifier: "com.apple.Terminal", windowTitle: nil) == .codeOrTerminal,
+            "Terminal should preserve technical writing"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Roadmap - Google Docs") == .document,
+            "Google Docs should use document writing context"
+        )
+    }
+
+    private static func testCleanupPromptUsesLocalAppStyle() {
+        let request = SmartCleanupRequest(
+            transcript: "uh hey can you send that by friday",
+            appName: "Slack",
+            bundleIdentifier: "com.tinyspeck.slackmacgap",
+            windowTitle: "Megaphone | project",
+            selectedText: nil,
+            contextSummary: "",
+            vocabulary: [],
+            corrections: [],
+            outputLanguage: "English",
+            customInstructions: ""
+        )
+        let prompt = AppleFoundationModelsPostProcessor.cleanupPrompt(for: request)
+
+        expect(prompt.contains("Writing context: work chat"), "Cleanup prompt lost Slack context")
+        expect(prompt.contains("concise, professional chat formatting"), "Slack cleanup guidance missing")
+        expect(prompt.contains("do not make the message more formal unless asked"), "Cleanup should preserve tone")
     }
 
     private static func testWakeCommandResponseWrappersAreRemoved() {

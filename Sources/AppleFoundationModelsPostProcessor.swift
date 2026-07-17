@@ -31,6 +31,7 @@ struct SmartCleanupRequest: Sendable {
     }
     let transcript: String
     let appName: String?
+    let bundleIdentifier: String?
     let windowTitle: String?
     let selectedText: String?
     let contextSummary: String
@@ -38,6 +39,81 @@ struct SmartCleanupRequest: Sendable {
     let corrections: [Correction]
     let outputLanguage: String
     let customInstructions: String
+}
+
+enum AppWritingContext: String, Equatable, Sendable {
+    case email
+    case workChat
+    case casualChat
+    case document
+    case codeOrTerminal
+    case neutral
+
+    static func classify(
+        appName: String?,
+        bundleIdentifier: String?,
+        windowTitle: String?
+    ) -> AppWritingContext {
+        let app = appName?.lowercased() ?? ""
+        let bundle = bundleIdentifier?.lowercased() ?? ""
+        let title = windowTitle?.lowercased() ?? ""
+        let identity = "\(app) \(bundle)"
+        let all = "\(identity) \(title)"
+
+        if identity.contains("slack") || identity.contains("msteams") || identity.contains("microsoft teams") {
+            return .workChat
+        }
+        if identity.contains("discord") || bundle.contains("com.apple.mobilesms") || app == "messages" {
+            return .casualChat
+        }
+        if bundle.contains("com.apple.mail") || identity.contains("outlook") || all.contains("gmail") {
+            return .email
+        }
+        let codeApps = [
+            "terminal", "iterm", "ghostty", "warp", "xcode", "visual studio code",
+            "vscode", "cursor", "zed"
+        ]
+        if codeApps.contains(where: identity.contains) {
+            return .codeOrTerminal
+        }
+        let documentApps = ["pages", "notes", "obsidian", "notion", "microsoft word"]
+        if documentApps.contains(where: identity.contains) || title.contains("google docs") {
+            return .document
+        }
+        return .neutral
+    }
+
+    var label: String {
+        switch self {
+        case .email: return "email"
+        case .workChat: return "work chat"
+        case .casualChat: return "casual chat"
+        case .document: return "document"
+        case .codeOrTerminal: return "code or terminal"
+        case .neutral: return "general writing"
+        }
+    }
+
+    var cleanupGuidance: String {
+        switch self {
+        case .email:
+            return "Use readable email punctuation and paragraph breaks. Do not invent a greeting, sign-off, subject, or details."
+        case .workChat:
+            return "Use concise, professional chat formatting. Preserve the speaker's tone and do not make the message more formal unless asked."
+        case .casualChat:
+            return "Use natural conversational punctuation and preserve the speaker's casual tone."
+        case .document:
+            return "Use polished prose punctuation and paragraph breaks while preserving every idea and the speaker's tone."
+        case .codeOrTerminal:
+            return "Preserve commands, code, flags, paths, identifiers, line breaks, and technical formatting exactly when clear."
+        case .neutral:
+            return "Use neutral, readable punctuation and preserve the speaker's tone."
+        }
+    }
+
+    var commandGuidance: String {
+        "When the request does not specify a style, shape the result for \(label). \(cleanupGuidance) An explicit style request always wins."
+    }
 }
 
 struct SmartCleanupResponse: Sendable {
@@ -114,7 +190,7 @@ actor AppleFoundationModelsPostProcessor {
             session = makeSession(instructions: Self.instructions)
         }
 
-        let prompt = Self.prompt(for: request)
+        let prompt = Self.cleanupPrompt(for: request)
         let started = ContinuousClock.now
         let responseText = try await respond(session: session, prompt: prompt, timeout: timeout)
         let elapsed = started.duration(to: .now).timeInterval
@@ -170,6 +246,7 @@ actor AppleFoundationModelsPostProcessor {
     func executeCommand(
         _ command: String,
         appName: String?,
+        bundleIdentifier: String?,
         windowTitle: String?,
         contextSummary: String,
         selectedText: String?,
@@ -190,6 +267,7 @@ actor AppleFoundationModelsPostProcessor {
         let prompt = Self.commandPrompt(
             command: trimmed,
             appName: appName,
+            bundleIdentifier: bundleIdentifier,
             windowTitle: windowTitle,
             contextSummary: contextSummary,
             selectedText: selectedText,
@@ -197,8 +275,9 @@ actor AppleFoundationModelsPostProcessor {
             vocabulary: vocabulary
         )
         let started = ContinuousClock.now
-        let output = try await respond(session: session, prompt: prompt, timeout: timeout)
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let output = Self.normalizeCommandOutput(
+            try await respond(session: session, prompt: prompt, timeout: timeout)
+        )
         guard !output.isEmpty else { throw SmartCleanupError.emptyOutput }
         return SmartCleanupResponse(
             text: output,
@@ -210,6 +289,7 @@ actor AppleFoundationModelsPostProcessor {
     static func commandPrompt(
         command: String,
         appName: String?,
+        bundleIdentifier: String?,
         windowTitle: String?,
         contextSummary: String,
         selectedText: String?,
@@ -220,7 +300,17 @@ actor AppleFoundationModelsPostProcessor {
             ? ""
             : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
         let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
+        let bundleHint = bundleIdentifier.map { "Destination bundle: \($0.prefix(160))\n" } ?? ""
         let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
+        let writingContext = AppWritingContext.classify(
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            windowTitle: windowTitle
+        )
+        let writingHint = """
+        Writing context: \(writingContext.label)
+        App-aware guidance: \(writingContext.commandGuidance)
+        """
         let contextHint = contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? ""
             : "Context: \(contextSummary.prefix(800))\n"
@@ -239,7 +329,8 @@ actor AppleFoundationModelsPostProcessor {
             """ }
             ?? ""
         let prompt = """
-        \(appHint)\(windowHint)\(contextHint)\(selectedTextHint)\(vocabularyHint)\(previousTextHint)SPOKEN REQUEST:
+        \(appHint)\(bundleHint)\(windowHint)\(writingHint)
+        \(contextHint)\(selectedTextHint)\(vocabularyHint)\(previousTextHint)SPOKEN REQUEST:
         <request>
         \(command.trimmingCharacters(in: .whitespacesAndNewlines))
         </request>
@@ -304,7 +395,7 @@ actor AppleFoundationModelsPostProcessor {
         }
     }
 
-    private static func prompt(for request: SmartCleanupRequest) -> String {
+    static func cleanupPrompt(for request: SmartCleanupRequest) -> String {
         var hints: [String] = []
         if let app = request.appName?.trimmingCharacters(in: .whitespacesAndNewlines), !app.isEmpty {
             hints.append("Destination app: \(app.prefix(100))")
@@ -312,6 +403,13 @@ actor AppleFoundationModelsPostProcessor {
         if let title = request.windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty {
             hints.append("Window title (spelling/formatting hint only): \(title.prefix(160))")
         }
+        let writingContext = AppWritingContext.classify(
+            appName: request.appName,
+            bundleIdentifier: request.bundleIdentifier,
+            windowTitle: request.windowTitle
+        )
+        hints.append("Writing context: \(writingContext.label)")
+        hints.append("App-aware cleanup: \(writingContext.cleanupGuidance)")
         if let selected = request.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty {
             hints.append("Nearby selected text (spelling/tone hint only): \(selected.prefix(300))")
         }
