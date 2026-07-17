@@ -10,6 +10,25 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.5] - 2026-07-17
+
+### Added
+
+- Hey Megaphone can use a recent dictation from the same app and window, so follow-ups such as “make that formal” or “format that as a list” work without repeating the text.
+- Smart Cleanup, Edit Mode, and Hey Megaphone now adapt their writing style for email, work chat, casual chat, documents, and technical apps using local app and window context.
+- The new Megaphone website is available at [megaphone.kuber.studio](https://megaphone.kuber.studio), with release-aware downloads, installation help, and automatic updates when a new version ships.
+
+### Improved
+
+- Wake phrase recognition now handles “mega phone” as separate words and additional common SpeechAnalyzer variations while keeping the shorter plain “Megaphone” trigger optional.
+- App-aware writing recognizes Mail, Outlook, Gmail, Slack, Teams, Discord, Messages, document editors, terminals, and code editors, including Slack and Discord in a browser.
+- Recent-text follow-ups no longer borrow text from another window in the same application.
+
+### Fixed
+
+- Hey Megaphone results no longer paste stray `<response>` tags.
+- App-specific context now reaches Edit Mode as well as Smart Cleanup and Inline AI.
+
 ## [1.1.4] - 2026-07-15
 
 ### Fixed
