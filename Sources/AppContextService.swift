@@ -347,7 +347,15 @@ Selected text: \(selectedText ?? "None")
         if screenshotAvailable {
             return "Could not reliably infer a two-sentence summary for \(activeApp) from the screenshot and metadata."
         }
-        return "Could not reliably infer a two-sentence summary for \(activeApp) from the visible metadata."
+        let writingContext = AppWritingContext.classify(
+            appName: appName,
+            bundleIdentifier: bundleIdentifier,
+            windowTitle: windowTitle
+        )
+        let selectionHint = selectedText?.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty == false
+            ? " Nearby selected text is available as a tone and spelling hint."
+            : ""
+        return "The user is writing in \(activeApp), treated as \(writingContext.label).\(selectionHint)"
     }
 
     private func focusedWindowTitle(from appElement: AXUIElement) -> String? {

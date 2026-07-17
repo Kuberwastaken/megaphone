@@ -385,7 +385,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private var speechRecognitionVocabulary: String {
         guard wakeCommandsEnabled else { return dictionaryVocabulary }
-        return [dictionaryVocabulary, "Hey Megaphone", "Megaphone"]
+        return ([dictionaryVocabulary] + WakePhraseMatcher.recognitionHints)
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
     }
@@ -2596,6 +2596,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 let result = try await AppleFoundationModelsPostProcessor.shared.executeCommand(
                     command,
                     appName: context.appName,
+                    bundleIdentifier: context.bundleIdentifier,
                     windowTitle: context.windowTitle,
                     contextSummary: context.contextSummary,
                     selectedText: context.selectedText,
@@ -2654,6 +2655,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             let request = SmartCleanupRequest(
                 transcript: trimmedRawTranscript,
                 appName: context.appName,
+                bundleIdentifier: context.bundleIdentifier,
                 windowTitle: context.windowTitle,
                 selectedText: context.selectedText,
                 contextSummary: context.contextSummary,
