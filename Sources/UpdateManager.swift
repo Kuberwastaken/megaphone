@@ -108,6 +108,39 @@ struct GitHubReleaseAsset: Decodable {
     }
 }
 
+private struct UpdateManifest: Decodable {
+    let schemaVersion: Int
+    let releases: [GitHubRelease]
+
+    enum CodingKeys: String, CodingKey {
+        case schemaVersion = "schema_version"
+        case releases
+    }
+}
+
+private enum ReleaseLookupError: LocalizedError {
+    case invalidResponse
+    case httpStatus(Int, rateLimitReset: String?)
+    case invalidManifest
+
+    var errorDescription: String? {
+        switch self {
+        case .invalidResponse:
+            return "The update server returned an invalid response."
+        case .invalidManifest:
+            return "The update server returned invalid release information."
+        case .httpStatus(let status, let reset):
+            if status == 403 || status == 429 {
+                if let reset {
+                    return "GitHub’s update limit is temporarily exhausted. Try again after \(reset)."
+                }
+                return "GitHub’s update limit is temporarily exhausted. Please try again later."
+            }
+            return "The update server returned status \(status)."
+        }
+    }
+}
+
 private struct SemanticRelease {
     let release: GitHubRelease
     let version: SemanticVersion
@@ -167,6 +200,7 @@ final class UpdateManager: ObservableObject {
         set { UserDefaults.standard.set(newValue, forKey: "updateLastPostTranscriptionReminderDate") }
     }
 
+    private let updateManifestURL = URL(string: "https://megaphone.kuber.studio/updates.json")!
     private let releasesURL = URL(string: "https://api.github.com/repos/Kuberwastaken/megaphone/releases?per_page=100")!
     private let stabilityBufferDays: TimeInterval = 3
     private let checkIntervalSeconds: TimeInterval = 7 * 24 * 60 * 60 // 7 days
@@ -228,35 +262,7 @@ final class UpdateManager: ObservableObject {
         defer { isChecking = false }
 
         do {
-            var request = URLRequest(url: releasesURL)
-            request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
-            request.cachePolicy = .reloadIgnoringLocalCacheData
-
-            let (data, response) = try await URLSession.shared.data(for: request)
-
-            guard let httpResponse = response as? HTTPURLResponse else {
-                if userInitiated { showErrorAlert("Could not reach GitHub.") }
-                return
-            }
-
-            // 404 means no releases exist yet
-            if httpResponse.statusCode == 404 {
-                lastCheckDate = Date()
-                updateAvailable = false
-                latestRelease = nil
-                latestReleaseVersion = ""
-                latestReleaseDate = ""
-                if userInitiated { showUpToDateAlert() }
-                return
-            }
-
-            guard (200..<300).contains(httpResponse.statusCode) else {
-                if userInitiated { showErrorAlert("GitHub returned status \(httpResponse.statusCode).") }
-                return
-            }
-
-            let decoder = JSONDecoder()
-            let releases = try decoder.decode([GitHubRelease].self, from: data)
+            let releases = try await fetchReleases()
             lastCheckDate = Date()
 
             guard let currentVersion = SemanticVersion(currentVersionString) else {
@@ -331,6 +337,64 @@ final class UpdateManager: ObservableObject {
                 showErrorAlert("Failed to check for updates: \(error.localizedDescription)")
             }
         }
+    }
+
+    private func fetchReleases() async throws -> [GitHubRelease] {
+        do {
+            var request = URLRequest(url: updateManifestURL)
+            request.cachePolicy = .reloadIgnoringLocalCacheData
+            request.setValue("application/json", forHTTPHeaderField: "Accept")
+            let (data, response) = try await URLSession.shared.data(for: request)
+            guard let httpResponse = response as? HTTPURLResponse else {
+                throw ReleaseLookupError.invalidResponse
+            }
+            guard (200..<300).contains(httpResponse.statusCode) else {
+                throw ReleaseLookupError.httpStatus(httpResponse.statusCode, rateLimitReset: nil)
+            }
+            let manifest = try JSONDecoder().decode(UpdateManifest.self, from: data)
+            guard manifest.schemaVersion == 1, !manifest.releases.isEmpty else {
+                throw ReleaseLookupError.invalidManifest
+            }
+            return manifest.releases
+        } catch {
+            return try await fetchReleasesFromGitHub()
+        }
+    }
+
+    private func fetchReleasesFromGitHub() async throws -> [GitHubRelease] {
+        var request = URLRequest(url: releasesURL)
+        request.cachePolicy = .reloadIgnoringLocalCacheData
+        request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+        request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+        let appVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "unknown"
+        request.setValue("Megaphone/\(appVersion)", forHTTPHeaderField: "User-Agent")
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        guard let httpResponse = response as? HTTPURLResponse else {
+            throw ReleaseLookupError.invalidResponse
+        }
+        guard (200..<300).contains(httpResponse.statusCode) else {
+            throw ReleaseLookupError.httpStatus(
+                httpResponse.statusCode,
+                rateLimitReset: rateLimitResetDescription(from: httpResponse)
+            )
+        }
+        do {
+            return try JSONDecoder().decode([GitHubRelease].self, from: data)
+        } catch {
+            throw ReleaseLookupError.invalidManifest
+        }
+    }
+
+    private func rateLimitResetDescription(from response: HTTPURLResponse) -> String? {
+        guard let rawValue = response.value(forHTTPHeaderField: "X-RateLimit-Reset"),
+              let timestamp = TimeInterval(rawValue) else {
+            return nil
+        }
+        let formatter = DateFormatter()
+        formatter.dateStyle = .none
+        formatter.timeStyle = .short
+        return formatter.string(from: Date(timeIntervalSince1970: timestamp))
     }
 
     private func releaseCandidates(from releases: [GitHubRelease]) -> [SemanticRelease] {

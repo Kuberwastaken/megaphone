@@ -113,8 +113,10 @@ grep -q 'Megaphone-Dev.dmg' .github/workflows/dev-release.yml \
   || { echo "Dev workflow does not publish Megaphone-Dev.dmg." >&2; exit 1; }
 grep -q 'Kuberwastaken/megaphone/releases' Sources/UpdateManager.swift \
   || { echo "Updater is not pointed at Megaphone GitHub releases." >&2; exit 1; }
-grep -q 'Kuberwastaken/megaphone/releases/latest' .github/scripts/hydrate-website-release.mjs \
-  || { echo "Website hydration is not pointed at Megaphone's latest release." >&2; exit 1; }
+grep -q 'api.github.com/repos/Kuberwastaken/megaphone/releases' .github/scripts/hydrate-website-release.mjs \
+  || { echo "Website hydration is not pointed at Megaphone releases." >&2; exit 1; }
+grep -q 'updates.json' .github/scripts/hydrate-website-release.mjs \
+  || { echo "Website hydration does not publish the updater manifest." >&2; exit 1; }
 grep -q 'gh workflow run pages.yml' .github/workflows/release.yml \
   || { echo "Stable release does not refresh the website." >&2; exit 1; }
 

@@ -4,7 +4,7 @@ import { join } from "node:path";
 const siteDirectory = process.argv[2];
 if (!siteDirectory) throw new Error("Usage: hydrate-website-release.mjs <site-directory>");
 
-const response = await fetch("https://api.github.com/repos/Kuberwastaken/megaphone/releases/latest", {
+const response = await fetch("https://api.github.com/repos/Kuberwastaken/megaphone/releases?per_page=20", {
   headers: {
     Accept: "application/vnd.github+json",
     Authorization: `Bearer ${process.env.GITHUB_TOKEN}`,
@@ -14,7 +14,16 @@ const response = await fetch("https://api.github.com/repos/Kuberwastaken/megapho
 });
 if (!response.ok) throw new Error(`GitHub release lookup failed: ${response.status} ${response.statusText}`);
 
-const release = await response.json();
+const releases = await response.json();
+if (!Array.isArray(releases)) throw new Error("GitHub release lookup returned an unexpected response");
+
+const isStableSemver = release =>
+  !release.draft &&
+  !release.prerelease &&
+  /^v?\d+\.\d+\.\d+$/.test(String(release.tag_name || ""));
+const stableReleases = releases.filter(isStableSemver);
+const release = stableReleases[0];
+if (!release) throw new Error("No stable semantic Megaphone release was found");
 const version = String(release.tag_name || "").replace(/^v/i, "");
 const dmg = release.assets?.find(asset => asset.name === "Megaphone.dmg");
 if (!version || !release.published_at || !release.html_url || !dmg?.browser_download_url) {
@@ -71,5 +80,28 @@ for (const fileName of ["index.html", "llms.txt"]) {
   if (unresolved) throw new Error(`Unresolved release metadata in ${fileName}: ${unresolved.join(", ")}`);
   await writeFile(path, contents);
 }
+
+const updateManifest = {
+  schema_version: 1,
+  generated_at: new Date().toISOString(),
+  releases: stableReleases.map(item => ({
+    tag_name: item.tag_name,
+    name: item.name,
+    body: item.body,
+    html_url: item.html_url,
+    published_at: item.published_at,
+    assets: (item.assets || [])
+      .filter(asset => asset.name === "Megaphone.dmg")
+      .map(asset => ({
+        name: asset.name,
+        browser_download_url: asset.browser_download_url,
+        size: asset.size
+      }))
+  }))
+};
+await writeFile(
+  join(siteDirectory, "updates.json"),
+  `${JSON.stringify(updateManifest, null, 2)}\n`
+);
 
 console.log(`Hydrated website with Megaphone ${version}, published ${releaseDate}`);
