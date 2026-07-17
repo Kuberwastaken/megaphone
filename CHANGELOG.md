@@ -10,13 +10,6 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
-## [1.1.6] - 2026-07-17
-
-### Fixed
-
-- Update checks now use Megaphone’s release manifest instead of GitHub’s shared unauthenticated API quota, preventing false “GitHub returned status 403” failures on rate-limited networks.
-- The GitHub API remains available as a fallback and now reports a clear rate-limit message with the local reset time when GitHub rejects a request.
-
 ## [1.1.5] - 2026-07-17
 
 ### Added
