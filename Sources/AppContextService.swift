@@ -92,6 +92,54 @@ Return only two sentences, no labels, no markdown, no extra commentary.
         )
     }
 
+    /// Selects `text` only when it is still immediately before the caret in
+    /// the focused editable element. This makes follow-up edits safe: if the
+    /// user moved the caret or changed the content, Megaphone leaves it alone.
+    func selectTextImmediatelyBeforeCaret(matching text: String) -> Bool {
+        guard let frontmostApp = NSWorkspace.shared.frontmostApplication else { return false }
+        let appElement = AXUIElementCreateApplication(frontmostApp.processIdentifier)
+        guard let focusedElement = accessibilityElement(
+            from: appElement,
+            attribute: kAXFocusedUIElementAttribute as CFString
+        ), let value = accessibilityRawString(
+            from: focusedElement,
+            attribute: kAXValueAttribute as CFString
+        ), var selectedRange = accessibilityRange(
+            from: focusedElement,
+            attribute: kAXSelectedTextRangeAttribute as CFString
+        ), selectedRange.length == 0 else {
+            return false
+        }
+
+        let target = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !target.isEmpty else { return false }
+        let valueNSString = value as NSString
+        let targetLength = (target as NSString).length
+        var caret = selectedRange.location
+        guard caret >= 0, caret <= valueNSString.length else { return false }
+
+        // Dictation appends one convenience space after sentence punctuation.
+        if caret > 0,
+           let trailingScalar = UnicodeScalar(valueNSString.character(at: caret - 1)),
+           CharacterSet.whitespacesAndNewlines.contains(trailingScalar) {
+            caret -= 1
+        }
+        guard caret >= targetLength else { return false }
+        let candidateRange = NSRange(location: caret - targetLength, length: targetLength)
+        guard valueNSString.substring(with: candidateRange) == target else { return false }
+
+        selectedRange = CFRange(
+            location: candidateRange.location,
+            length: candidateRange.length + (selectedRange.location - caret)
+        )
+        guard let rangeValue = AXValueCreate(.cfRange, &selectedRange) else { return false }
+        return AXUIElementSetAttributeValue(
+            focusedElement,
+            kAXSelectedTextRangeAttribute as CFString,
+            rangeValue
+        ) == .success
+    }
+
     func collectContext() async -> AppContext {
         let contextSystemPrompt = resolveContextPrompt()
 
@@ -419,6 +467,18 @@ Selected text: \(selectedText ?? "None")
         let result = AXUIElementCopyAttributeValue(element, attribute, &value)
         guard result == .success, let stringValue = value as? String else { return nil }
         return stringValue.isEmpty ? nil : stringValue
+    }
+
+    private func accessibilityRange(from element: AXUIElement, attribute: CFString) -> CFRange? {
+        var value: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(element, attribute, &value) == .success,
+              let rawValue = value,
+              CFGetTypeID(rawValue) == AXValueGetTypeID() else {
+            return nil
+        }
+        let axValue = unsafeBitCast(rawValue, to: AXValue.self)
+        var range = CFRange()
+        return AXValueGetValue(axValue, .cfRange, &range) ? range : nil
     }
 
     private func accessibilityPoint(from element: AXUIElement, attribute: CFString) -> CGPoint? {

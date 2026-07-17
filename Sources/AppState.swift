@@ -2579,11 +2579,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
         plainMegaphoneWakeWordEnabled: Bool,
         previousText: String? = nil,
         smartSessionID: UUID? = nil
-    ) async -> (finalTranscript: String, outcome: TranscriptProcessingOutcome, prompt: String) {
+    ) async -> (
+        finalTranscript: String,
+        outcome: TranscriptProcessingOutcome,
+        prompt: String,
+        replacementTarget: String?
+    ) {
         let trimmedRawTranscript = rawTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
 
         guard !trimmedRawTranscript.isEmpty else {
-            return ("", .skippedEmptyRawTranscript, "")
+            return ("", .skippedEmptyRawTranscript, "", nil)
         }
 
         let vocabulary = customVocabulary
@@ -2598,7 +2603,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         ) {
             let command = wake.trailingText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !command.isEmpty else {
-                return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "")
+                return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "", nil)
             }
             do {
                 let result = try await AppleFoundationModelsPostProcessor.shared.executeCommand(
@@ -2615,14 +2620,16 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return (
                     result.text,
                     .wakeCommandSucceeded(phrase: wake.phrase, elapsed: result.elapsed),
-                    result.prompt
+                    result.prompt,
+                    result.replacesPreviousText ? previousText : nil
                 )
             } catch {
                 os_log(.error, log: recordingLog, "Wake command failed: %{public}@", error.localizedDescription)
                 return (
                     command,
                     .wakeCommandFailedFallback(phrase: wake.phrase, reason: error.localizedDescription),
-                    ""
+                    "",
+                    nil
                 )
             }
         }
@@ -2639,26 +2646,26 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     sessionID: smartSessionID,
                     timeout: 4
                 )
-                return (result.text, .commandModeSucceeded(invocation: invocation), result.prompt)
+                return (result.text, .commandModeSucceeded(invocation: invocation), result.prompt, nil)
             } catch {
                 os_log(.error, log: recordingLog, "Edit mode failed: %{public}@", error.localizedDescription)
-                return (selectedText, .commandModeFailedFallback(invocation: invocation), "")
+                return (selectedText, .commandModeFailedFallback(invocation: invocation), "", nil)
             }
         }
 
         if let macro = findMatchingMacro(for: trimmedRawTranscript) {
             os_log(.info, log: recordingLog, "Voice macro triggered: %{public}@", macro.command)
-            return (macro.payload, .voiceMacro(command: macro.command), "")
+            return (macro.payload, .voiceMacro(command: macro.command), "", nil)
         }
 
         if cleanupMode == .exact {
-            return (trimmedRawTranscript, .preservedExactWording, "")
+            return (trimmedRawTranscript, .preservedExactWording, "", nil)
         }
 
         let deterministic = TranscriptTidier.tidy(trimmedRawTranscript, corrections: corrections)
         let safeFallback = deterministic.isEmpty ? trimmedRawTranscript : deterministic
         if cleanupMode == .basic {
-            return (safeFallback, .deterministicCleanup, "")
+            return (safeFallback, .deterministicCleanup, "", nil)
         }
 
         do {
@@ -2683,10 +2690,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 sessionID: smartSessionID,
                 timeout: trimmedRawTranscript.count > 500 ? 4 : 2.5
             )
-            return (result.text, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt)
+            return (result.text, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt, nil)
         } catch {
             os_log(.error, log: recordingLog, "On-device smart cleanup failed: %{public}@", error.localizedDescription)
-            return (safeFallback, .smartCleanupFallback(reason: error.localizedDescription), "")
+            return (safeFallback, .smartCleanupFallback(reason: error.localizedDescription), "", nil)
         }
     }
 
@@ -2934,7 +2941,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
                             }
 
                             let pendingClipboardRestore = self.writeTranscriptToPasteboard(trimmedFinalTranscript)
-                            self.pasteAtCursorWhenShortcutReleased {
+                            self.pasteAtCursorWhenShortcutReleased(performPaste: false) {
+                                if let replacementTarget = result.replacementTarget {
+                                    _ = self.contextService.selectTextImmediatelyBeforeCaret(
+                                        matching: replacementTarget
+                                    )
+                                }
+                                self.pasteAtCursor()
                                 if shouldPressEnterAfterPaste {
                                     self.pressEnterAfterPaste {
                                         self.restoreClipboardIfNeeded(pendingClipboardRestore)
@@ -3494,9 +3507,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func pasteAtCursorWhenShortcutReleased(completion: (() -> Void)? = nil) {
+    private func pasteAtCursorWhenShortcutReleased(
+        performPaste: Bool = true,
+        completion: (() -> Void)? = nil
+    ) {
         performAfterShortcutReleased { [weak self] in
-            self?.pasteAtCursor()
+            if performPaste {
+                self?.pasteAtCursor()
+            }
             completion?()
         }
     }

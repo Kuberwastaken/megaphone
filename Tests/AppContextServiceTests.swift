@@ -8,6 +8,7 @@ struct AppContextServiceTests {
         testNonStrippingModelPreservesExistingBehavior()
         testWakeCommandIncludesPreviousTextAndScreenContext()
         testWakeCommandResponseWrappersAreRemoved()
+        testWakeCommandRoutingIsParsed()
         testAppWritingContextClassification()
         testCleanupPromptUsesLocalAppStyle()
         testSelectionPromptUsesDestinationContext()
@@ -168,6 +169,22 @@ struct AppContextServiceTests {
                 expected
             )
         }
+    }
+
+    private static func testWakeCommandRoutingIsParsed() {
+        let replacement = AppleFoundationModelsPostProcessor.parseWakeCommandOutput(
+            "REPLACE_PREVIOUS\nHello,\n\nCould you send this by Friday?"
+        )
+        expect(replacement.replacesPreviousText, "Previous-text edit route was not preserved")
+        expectEqual(replacement.text, "Hello,\n\nCould you send this by Friday?")
+
+        let insertion = AppleFoundationModelsPostProcessor.parseWakeCommandOutput("INSERT\n8")
+        expect(!insertion.replacesPreviousText, "Standalone answer was treated as an edit")
+        expectEqual(insertion.text, "8")
+
+        let legacy = AppleFoundationModelsPostProcessor.parseWakeCommandOutput("ordinary output")
+        expect(!legacy.replacesPreviousText, "Unrouted output must fail safe as an insertion")
+        expectEqual(legacy.text, "ordinary output")
     }
 
     private static func expectEqual(_ actual: String?, _ expected: String, file: StaticString = #file, line: UInt = #line) {

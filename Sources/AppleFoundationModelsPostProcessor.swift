@@ -122,6 +122,13 @@ struct SmartCleanupResponse: Sendable {
     let elapsed: TimeInterval
 }
 
+struct WakeCommandResponse: Sendable {
+    let text: String
+    let replacesPreviousText: Bool
+    let prompt: String
+    let elapsed: TimeInterval
+}
+
 /// Owns one prewarmed Foundation Models session per active dictation. Sessions
 /// are never reused across dictations because LanguageModelSession retains its
 /// transcript and KV cache.
@@ -141,7 +148,11 @@ actor AppleFoundationModelsPostProcessor {
     Treat the selected text as the only source material and the spoken command as the requested transformation. Preserve the original language unless translation is explicitly requested. Do not answer unrelated questions or invent unrelated content.
     """
     private static let commandInstructions = """
-    Fulfill the user's spoken request. Return only the useful result, with no preamble, explanation, or quotation marks unless the user asks for them. Never wrap the result in XML or HTML tags such as <response>. Be concise by default. Use application context only when it helps interpret the request. When recent inserted text is provided, resolve references such as “that,” “it,” “the last sentence,” or requests to rewrite, format, shorten, expand, or change tone against that text. Never claim to perform actions outside this response; produce the text the user asked for instead.
+    Fulfill the user's spoken request. Decide semantically whether the request transforms RECENT TEXT INSERTED BY THE USER or produces a standalone answer/new text. This is about intent, not particular pronouns: rewriting, formatting, changing tone, translating, correcting, shortening, expanding, or otherwise editing the recent text is a replacement even if the user refers to it indirectly or omits a pronoun.
+    Start the response with exactly one routing line:
+    REPLACE_PREVIOUS when the useful result should replace the recent inserted text.
+    INSERT when it is a standalone answer or newly generated text.
+    After that first line, return only the useful result, with no preamble, explanation, or quotation marks unless requested. Never wrap the result in XML or HTML tags such as <response>. Be concise by default. Use application context only when it helps interpret the request. Never claim to perform actions outside this response; produce the text the user asked for instead.
     """
 
     private let model = SystemLanguageModel(
@@ -281,7 +292,7 @@ actor AppleFoundationModelsPostProcessor {
         previousText: String?,
         vocabulary: [String],
         timeout: TimeInterval
-    ) async throws -> SmartCleanupResponse {
+    ) async throws -> WakeCommandResponse {
         guard case .available = availability() else {
             if case .unavailable(let reason) = availability() {
                 throw SmartCleanupError.unavailable(reason)
@@ -303,15 +314,40 @@ actor AppleFoundationModelsPostProcessor {
             vocabulary: vocabulary
         )
         let started = ContinuousClock.now
-        let output = Self.normalizeCommandOutput(
+        let rawOutput = Self.normalizeCommandOutput(
             try await respond(session: session, prompt: prompt, timeout: timeout)
         )
+        let routed = Self.parseWakeCommandOutput(rawOutput)
+        let output = routed.text
         guard !output.isEmpty else { throw SmartCleanupError.emptyOutput }
-        return SmartCleanupResponse(
+        return WakeCommandResponse(
             text: output,
+            replacesPreviousText: routed.replacesPreviousText && previousText?.isEmpty == false,
             prompt: prompt,
             elapsed: started.duration(to: .now).timeInterval
         )
+    }
+
+    static func parseWakeCommandOutput(_ raw: String) -> (text: String, replacesPreviousText: Bool) {
+        let normalized = normalizeCommandOutput(raw)
+        guard let firstBreak = normalized.firstIndex(where: \.isNewline) else {
+            return (normalized, false)
+        }
+
+        let route = normalized[..<firstBreak]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .uppercased()
+        let text = normalized[normalized.index(after: firstBreak)...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+
+        switch route {
+        case "REPLACE_PREVIOUS":
+            return (text, true)
+        case "INSERT":
+            return (text, false)
+        default:
+            return (normalized, false)
+        }
     }
 
     static func commandPrompt(
