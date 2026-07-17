@@ -135,9 +135,9 @@ make        # requires Xcode 26 and the macOS 26 SDK
 make run
 ```
 
-## Built with Codex CLI
+## Built with ChatGPT 5.6 and Codex CLI
 
-I built Megaphone for the **OpenAI Build Week hackathon**, mostly with **Codex CLI using GPT-5.6 (Sol)**. I changed the reasoning effort depending on the task. Lower effort was plenty for copy, UI polish, and straightforward refactors. I used medium effort for features like the Dictionary and wake commands, then higher effort for streaming audio, Swift concurrency, cancellation, updater safety, signing, and bugs spread across a bunch of files.
+I built Megaphone for the **OpenAI Build Week hackathon** with **ChatGPT 5.6 and Codex CLI**. In Codex CLI, I used **Sol** with different reasoning effort depending on the task. Lower effort was plenty for copy, UI polish, and straightforward refactors. I used medium effort for features like the Dictionary and wake commands, then higher effort for streaming audio, Swift concurrency, cancellation, updater safety, signing, and bugs spread across a bunch of files.
 
 The setup was really fun. Codex CLI ran on a headless Raspberry Pi and Megaphone ran on my Mac. I would explain what I wanted and what could not break. Codex would inspect the repo, make a change, build or test it on the Mac over SSH, read the failure, and try again. We kept everything in small commits, so it was always easy to see what changed or undo one part.
 
