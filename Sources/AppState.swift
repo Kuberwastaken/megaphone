@@ -385,7 +385,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     private var speechRecognitionVocabulary: String {
         guard wakeCommandsEnabled else { return dictionaryVocabulary }
-        return [dictionaryVocabulary, "Hey Megaphone", "Megaphone"]
+        return ([dictionaryVocabulary] + WakePhraseMatcher.recognitionHints)
             .filter { !$0.isEmpty }
             .joined(separator: "\n")
     }

@@ -5,6 +5,7 @@ enum WakePhraseMatcherTests {
         testHeyMegaphoneIsAlwaysRecognized()
         testPlainMegaphoneToggle()
         testCommonRecognitionAliases()
+        testHiddenRecognitionHints()
         testPhraseBoundariesAndPosition()
         testTrailingDictation()
         testPartialResultSuppression()
@@ -45,6 +46,9 @@ enum WakePhraseMatcherTests {
             "he made a phone, write this",
             "hay mega foam, write this",
             "hi mega form, write this",
+            "hey megafoam, write this",
+            "hey megaform, write this",
+            "hey megafone, write this",
             "hey mecca phone, write this",
             "hey mecha phone, write this",
             "hey megha phone, write this",
@@ -65,11 +69,10 @@ enum WakePhraseMatcherTests {
             )
         }
 
-        for transcript in ["mega phone, write this"] {
-            expectEqual(WakePhraseMatcher.detect(in: transcript), nil)
+        for transcript in ["mega phone, write this", "mega—phone, write this"] {
             expectEqual(
-                WakePhraseMatcher.detect(in: transcript, plainMegaphoneEnabled: true),
-                WakePhraseMatch(phrase: .megaphone, trailingText: "write this")
+                WakePhraseMatcher.detect(in: transcript),
+                WakePhraseMatch(phrase: .heyMegaphone, trailingText: "write this")
             )
         }
 
@@ -80,6 +83,17 @@ enum WakePhraseMatcherTests {
                 "Fuzzy alias escaped the Hey-only guard for \(transcript.debugDescription)"
             )
         }
+    }
+
+    private static func testHiddenRecognitionHints() {
+        expectEqual(WakePhraseMatcher.recognitionHints.contains("Hey Megaphone"), true, "Canonical wake hint missing")
+        expectEqual(WakePhraseMatcher.recognitionHints.contains("Hey Mega Phone"), true, "Segmented wake hint missing")
+        expectEqual(WakePhraseMatcher.recognitionHints.contains("Hey Make a Phone"), true, "Acoustic wake hint missing")
+        expectEqual(
+            WakePhraseMatcher.recognitionHints.allSatisfy { $0.lowercased().hasPrefix("hey") || $0 == "Megaphone" },
+            true,
+            "Unsafe plain acoustic alias leaked into recognition hints"
+        )
     }
 
     private static func testPhraseBoundariesAndPosition() {

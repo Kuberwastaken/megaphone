@@ -63,9 +63,25 @@ struct WakePhraseMatcher {
         if let match = match(pattern: heyPattern, phrase: .heyMegaphone, in: transcript) {
             return match
         }
+        // SpeechAnalyzer occasionally drops the quiet leading “Hey” while
+        // still returning the distinctive segmented product name. Recover
+        // only “mega phone” here; broader acoustic aliases stay Hey-gated.
+        if let match = match(pattern: segmentedRecoveryPattern, phrase: .heyMegaphone, in: transcript) {
+            return match
+        }
         guard plainMegaphoneEnabled else { return nil }
         return match(pattern: plainPattern, phrase: .megaphone, in: transcript)
     }
+
+    static let recognitionHints = [
+        "Hey Megaphone",
+        "Megaphone",
+        "Hey Mega Phone",
+        "Hey Make a Phone",
+        "Hey Made a Phone",
+        "Hey Mega Foam",
+        "Hey Mega Form"
+    ]
 
     private func cooldownHasElapsed(at date: Date) -> Bool {
         guard let lastMatchDate else { return true }
@@ -106,6 +122,9 @@ struct WakePhraseMatcher {
         "mega" + phraseSeparator + "foam",
         "mega" + phraseSeparator + "form",
         "mega" + phraseSeparator + "phoned",
+        "megafone",
+        "megafoam",
+        "megaform",
         "megha" + phraseSeparator + "phone",
         "mecca" + phraseSeparator + "phone",
         "mecha" + phraseSeparator + "phone",
@@ -130,7 +149,11 @@ struct WakePhraseMatcher {
         options: [.caseInsensitive]
     )
     private static let plainPattern = try! NSRegularExpression(
-        pattern: leadingSeparators + strictMegaphoneVariants + phraseBoundary,
+        pattern: leadingSeparators + "megaphone" + phraseBoundary,
+        options: [.caseInsensitive]
+    )
+    private static let segmentedRecoveryPattern = try! NSRegularExpression(
+        pattern: leadingSeparators + "mega" + phraseSeparator + "phone" + phraseBoundary,
         options: [.caseInsensitive]
     )
     private static let trailingSeparators = CharacterSet.whitespacesAndNewlines
