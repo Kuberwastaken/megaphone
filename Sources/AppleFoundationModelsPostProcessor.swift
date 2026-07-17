@@ -250,7 +250,6 @@ actor AppleFoundationModelsPostProcessor {
             ? ""
             : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
         let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
-        let bundleHint = bundleIdentifier.map { "Destination bundle: \($0.prefix(160))\n" } ?? ""
         let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
         let writingContext = AppWritingContext.classify(
             appName: appName,
@@ -258,7 +257,7 @@ actor AppleFoundationModelsPostProcessor {
             windowTitle: windowTitle
         )
         return """
-        \(appHint)\(bundleHint)\(windowHint)Writing context: \(writingContext.label)
+        \(appHint)\(windowHint)Writing context: \(writingContext.label)
         App-aware guidance: Apply this only when the spoken editing command does not specify another style. \(writingContext.cleanupGuidance)
         \(vocabularyHint)SELECTED TEXT:
         <selected_text>
@@ -329,7 +328,6 @@ actor AppleFoundationModelsPostProcessor {
             ? ""
             : "Preferred spellings: \(vocabulary.prefix(40).joined(separator: ", "))\n"
         let appHint = appName.map { "Destination app: \($0.prefix(100))\n" } ?? ""
-        let bundleHint = bundleIdentifier.map { "Destination bundle: \($0.prefix(160))\n" } ?? ""
         let windowHint = windowTitle.map { "Window: \($0.prefix(160))\n" } ?? ""
         let writingContext = AppWritingContext.classify(
             appName: appName,
@@ -358,7 +356,7 @@ actor AppleFoundationModelsPostProcessor {
             """ }
             ?? ""
         let prompt = """
-        \(appHint)\(bundleHint)\(windowHint)\(writingHint)
+        \(appHint)\(windowHint)\(writingHint)
         \(contextHint)\(selectedTextHint)\(vocabularyHint)\(previousTextHint)SPOKEN REQUEST:
         <request>
         \(command.trimmingCharacters(in: .whitespacesAndNewlines))

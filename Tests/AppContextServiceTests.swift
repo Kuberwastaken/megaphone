@@ -74,6 +74,7 @@ struct AppContextServiceTests {
         expect(prompt.contains("RECENT TEXT INSERTED BY THE USER:"), "Previous-text label missing")
         expect(prompt.contains("hey, can you send this over by friday?"), "Previous dictation missing")
         expect(prompt.contains("Destination app: Mail"), "Destination app context missing")
+        expect(!prompt.contains("com.apple.mail"), "Raw bundle identifier should not enter the model prompt")
         expect(prompt.contains("Writing context: email"), "Email writing context missing")
         expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Safe email guidance missing")
         expect(prompt.contains("Window: Draft — Project update"), "Window context missing")
@@ -143,7 +144,7 @@ struct AppContextServiceTests {
             vocabulary: ["Megaphone"]
         )
 
-        expect(prompt.contains("Destination bundle: com.apple.mail"), "Edit prompt lost bundle context")
+        expect(!prompt.contains("com.apple.mail"), "Raw bundle identifier should not enter the edit prompt")
         expect(prompt.contains("Window: Draft — Launch"), "Edit prompt lost window context")
         expect(prompt.contains("Writing context: email"), "Edit prompt lost email style")
         expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Edit prompt lost email safety")
