@@ -34,12 +34,41 @@ struct SmartCleanupRequest: Sendable {
     let bundleIdentifier: String?
     let windowTitle: String?
     let selectedText: String?
+    let textBeforeCaret: String?
     let contextSummary: String
     let vocabulary: [String]
     let corrections: [Correction]
     let outputLanguage: String
     let customInstructions: String
     var formality: WritingFormality = .balanced
+
+    init(
+        transcript: String,
+        appName: String?,
+        bundleIdentifier: String?,
+        windowTitle: String?,
+        selectedText: String?,
+        textBeforeCaret: String? = nil,
+        contextSummary: String,
+        vocabulary: [String],
+        corrections: [Correction],
+        outputLanguage: String,
+        customInstructions: String,
+        formality: WritingFormality = .balanced
+    ) {
+        self.transcript = transcript
+        self.appName = appName
+        self.bundleIdentifier = bundleIdentifier
+        self.windowTitle = windowTitle
+        self.selectedText = selectedText
+        self.textBeforeCaret = textBeforeCaret
+        self.contextSummary = contextSummary
+        self.vocabulary = vocabulary
+        self.corrections = corrections
+        self.outputLanguage = outputLanguage
+        self.customInstructions = customInstructions
+        self.formality = formality
+    }
 }
 
 /// The user's standing preference for how their words are polished in a given
@@ -206,6 +235,7 @@ actor AppleFoundationModelsPostProcessor {
     static let dictationInstructions = """
     Clean literal speech transcripts. Return only cleaned text. Make minimum edits. Preserve every clear idea, clause, request, hedge, tone, and level of detail; never summarize or make the text more direct. “I think we should ship this tomorrow” stays “I think we should ship this tomorrow.” “The command is git push dash dash force with lease, and then check the JSON output” becomes “The command is git push --force-with-lease, and then check the JSON output.”
     Remove only hesitation fillers, stutters, duplicate starts, and abandoned wording. Fix punctuation, capitalization, spacing, and obvious recognition mistakes.
+    When a hint shows text immediately before the cursor, the result continues that text: follow the hint's capitalization directive exactly and never repeat its words. After “I think we should”, “definitely ship it” stays “definitely ship it”; after “Check the logs.”, “the deploy failed” becomes “The deploy failed.”
     Formatting follows the App-aware cleanup hint. Dictated list markers such as “bullet point”, “dash”, or “numbered list” become real list lines and the marker words are never kept: “bullet point wash the dishes bullet point buy coffee” becomes “- Wash the dishes” and “- Buy coffee” on separate lines. Where the hint says structure is welcome, a clearly itemized enumeration like “first…, second…, third…” also becomes a list with one item per line and no ordinal words, keeping any introductory clause (“I want to do three things:”) as a lead-in line above the list. Everywhere else, prose stays prose even when it contains “first” and “second”.
     For explicit self-corrections, delete the abandoned choice and correction marker: “Let's meet Thursday, no actually Wednesday after lunch” becomes “Let's meet Wednesday after lunch.”
     Preserve language, names, technical identifiers, paths, flags, URLs, and profanity. Convert “dash dash force with lease” to “--force-with-lease” and “user underscore id” to “user_id” only when clearly technical.
@@ -282,7 +312,11 @@ actor AppleFoundationModelsPostProcessor {
         let started = ContinuousClock.now
         let responseText = try await respond(session: session, prompt: prompt, timeout: timeout)
         let elapsed = started.duration(to: .now).timeInterval
-        let cleaned = Self.normalizeCommandOutput(responseText)
+        var cleaned = Self.normalizeCommandOutput(responseText)
+        if let before = request.textBeforeCaret {
+            cleaned = Self.stripRepeatedCaretPrefix(cleaned, before: before)
+        }
+        cleaned = Self.harmonizeCaseWithCaretContext(cleaned, request: request)
         try Self.validate(cleaned, source: request.transcript)
         return SmartCleanupResponse(text: cleaned, prompt: prompt, elapsed: elapsed)
     }
@@ -618,6 +652,23 @@ actor AppleFoundationModelsPostProcessor {
         if let selected = request.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty {
             hints.append("Nearby selected text (spelling/tone hint only): \(selected.prefix(300))")
         }
+        if let rawBefore = request.textBeforeCaret {
+            let before = rawBefore
+                .replacingOccurrences(of: "\r\n", with: " ")
+                .replacingOccurrences(of: "\n", with: " ")
+                .replacingOccurrences(of: "\r", with: " ")
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .suffix(240)
+            if !before.isEmpty {
+                // The on-device model follows a concrete directive far more
+                // reliably than a conditional rule, so the mid-sentence vs.
+                // new-sentence branch is decided here, not in the prompt.
+                let directive = caretContinuesSentence(rawBefore)
+                    ? "the transcript continues it mid-sentence: start lowercase, no leading period, match its flow"
+                    : "it ends a sentence, so the transcript begins a new sentence: capitalize its first word (“the deploy failed” becomes “The deploy failed”)"
+                hints.append("Text immediately before the cursor (never repeat it): \"\(before)\" — \(directive).")
+            }
+        }
         if !request.contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             hints.append("Local activity hint: \(request.contextSummary.prefix(240))")
         }
@@ -641,6 +692,98 @@ actor AppleFoundationModelsPostProcessor {
         \(request.transcript)
         </transcript>
         """
+    }
+
+    /// Despite the hint's "never repeat it", the on-device model sometimes
+    /// glues the before-caret text onto the front of its output. Strip it
+    /// deterministically: when the output's opening words match a suffix of
+    /// the before-caret text, drop them. Conservative on purpose — at least
+    /// three words must match, or the entire before-caret text (two words
+    /// minimum), so deliberately re-dictated short phrases survive.
+    static func stripRepeatedCaretPrefix(_ text: String, before: String) -> String {
+        let beforeWords = wordRanges(of: before).map { before[$0].lowercased() }
+        let outputWordRanges = wordRanges(of: text)
+        var matched = 0
+        for k in stride(from: min(beforeWords.count, outputWordRanges.count), through: 1, by: -1) {
+            let head = outputWordRanges.prefix(k).map { text[$0].lowercased() }
+            if Array(beforeWords.suffix(k)) == head {
+                matched = k
+                break
+            }
+        }
+        guard matched >= 3 || (matched == beforeWords.count && matched >= 2) else { return text }
+        let separators: Set<Character> = [",", ";", ":", "—", "–", "-"]
+        let rest = text[outputWordRanges[matched - 1].upperBound...]
+            .drop(while: { $0.isWhitespace || separators.contains($0) })
+        return rest.isEmpty ? text : String(rest)
+    }
+
+    private static func wordRanges(of text: String) -> [Range<String.Index>] {
+        var ranges: [Range<String.Index>] = []
+        var wordStart: String.Index?
+        var index = text.startIndex
+        while index < text.endIndex {
+            let character = text[index]
+            let isWordCharacter = character.isLetter || character.isNumber
+                || character == "'" || character == "’"
+            if isWordCharacter {
+                if wordStart == nil { wordStart = index }
+            } else if let start = wordStart {
+                ranges.append(start..<index)
+                wordStart = nil
+            }
+            index = text.index(after: index)
+        }
+        if let start = wordStart {
+            ranges.append(start..<text.endIndex)
+        }
+        return ranges
+    }
+
+    /// The on-device model's casing is unreliable at the seam between existing
+    /// text and the new dictation, so the first letter is harmonized
+    /// deterministically. After a finished sentence the first word is safely
+    /// capitalized; mid-sentence it is lowercased, but only when the speaker's
+    /// own transcript used the word in lowercase, so proper nouns and "I"
+    /// keep their capitals.
+    static func harmonizeCaseWithCaretContext(_ text: String, request: SmartCleanupRequest) -> String {
+        guard let before = request.textBeforeCaret,
+              !before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+              let first = text.first else {
+            return text
+        }
+
+        if caretContinuesSentence(before) {
+            guard first.isUppercase else { return text }
+            let firstWord = text.prefix(while: { $0.isLetter || $0 == "'" || $0 == "’" })
+            guard firstWord.dropFirst().allSatisfy({ !$0.isUppercase }) else { return text }
+            let transcriptWords = request.transcript.split(whereSeparator: {
+                !($0.isLetter || $0 == "'" || $0 == "’")
+            })
+            guard transcriptWords.contains(where: { $0 == firstWord.lowercased() }) else { return text }
+            return first.lowercased() + text.dropFirst()
+        }
+
+        guard first.isLowercase else { return text }
+        // A mixed-case first word ("iPhone") is deliberate; leave it alone.
+        let firstWord = text.prefix(while: { $0.isLetter || $0 == "'" || $0 == "’" })
+        guard firstWord.dropFirst().allSatisfy({ !$0.isUppercase }) else { return text }
+        return first.uppercased() + text.dropFirst()
+    }
+
+    /// Whether text captured before the caret ends mid-sentence, so dictation
+    /// continues it, rather than after sentence punctuation or a line break,
+    /// where dictation starts a fresh sentence.
+    static func caretContinuesSentence(_ textBeforeCaret: String) -> Bool {
+        if textBeforeCaret.reversed().prefix(while: \.isWhitespace).contains(where: \.isNewline) {
+            return false
+        }
+        var scan = Substring(textBeforeCaret.trimmingCharacters(in: .whitespacesAndNewlines))
+        while let last = scan.last, "\"'”’)]".contains(last) {
+            scan = scan.dropLast()
+        }
+        guard let last = scan.last else { return false }
+        return !".!?…".contains(last)
     }
 
     private static func validate(_ output: String, source: String, allowsExpansion: Bool = false) throws {

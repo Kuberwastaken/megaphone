@@ -1062,6 +1062,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: nil,
             windowTitle: nil,
             selectedText: nil,
+            textBeforeCaret: nil,
             currentActivity: item.contextSummary
         )
 
@@ -2515,6 +2516,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 bundleIdentifier: context.bundleIdentifier,
                 windowTitle: context.windowTitle,
                 selectedText: context.selectedText,
+                textBeforeCaret: context.textBeforeCaret,
                 contextSummary: context.contextSummary,
                 vocabulary: vocabulary,
                 corrections: corrections.map {
@@ -2966,6 +2968,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: frontmostApp?.bundleIdentifier,
             windowTitle: windowTitle,
             selectedText: nil,
+            textBeforeCaret: nil,
             currentActivity: "Could not refresh app context at stop time; using text-only post-processing."
         )
     }
