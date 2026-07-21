@@ -56,12 +56,14 @@ enum ShortcutRole {
     case hold
     case toggle
     case copyAgain
+    case cancel
 
     var title: String {
         switch self {
         case .hold: return "Hold to Talk"
         case .toggle: return "Tap to Toggle"
         case .copyAgain: return "Paste Again"
+        case .cancel: return "Cancel Dictation"
         }
     }
 }
@@ -78,17 +80,20 @@ struct ShortcutConfiguration: Equatable {
     let hold: ShortcutBinding
     let toggle: ShortcutBinding
     let copyAgain: ShortcutBinding
+    let cancel: ShortcutBinding
     let permittedAdditionalExactMatchModifiers: ShortcutModifiers
 
     init(
         hold: ShortcutBinding,
         toggle: ShortcutBinding,
         copyAgain: ShortcutBinding = .disabled,
+        cancel: ShortcutBinding = .defaultCancel,
         permittedAdditionalExactMatchModifiers: ShortcutModifiers = []
     ) {
         self.hold = hold
         self.toggle = toggle
         self.copyAgain = copyAgain
+        self.cancel = cancel
         self.permittedAdditionalExactMatchModifiers = permittedAdditionalExactMatchModifiers
     }
 
@@ -334,6 +339,24 @@ struct ShortcutBinding: Codable, Hashable, Identifiable, Equatable {
         }
     }
 
+    /// True when a key-down for `keyCode` with `activeModifiers` held should
+    /// trigger this binding as the cancel key. The binding's modifiers must be
+    /// a subset of the active ones (rather than an exact match) so the default
+    /// Escape binding keeps the historical behavior of cancelling even when
+    /// extra modifiers happen to be held.
+    func matchesCancelKeyDown(keyCode: UInt16, activeModifiers: ShortcutModifiers) -> Bool {
+        guard kind == .key else { return false }
+        return self.keyCode == keyCode && activeModifiers.isSuperset(of: modifiers)
+    }
+
+    /// Cancel bindings must be regular-key bindings so they can be matched on
+    /// key-down events. Anything else (nil, disabled, modifier-only, corrupt
+    /// storage) falls back to the default Escape binding.
+    static func sanitizedCancelBinding(_ binding: ShortcutBinding?) -> ShortcutBinding {
+        guard let binding, binding.kind == .key else { return .defaultCancel }
+        return binding
+    }
+
     static let disabled = ShortcutBinding(
         keyCode: 0,
         keyDisplay: "Disabled",
@@ -343,6 +366,13 @@ struct ShortcutBinding: Codable, Hashable, Identifiable, Equatable {
     )
     static let defaultHold = ShortcutPreset.fnKey.binding
     static let defaultToggle = ShortcutPreset.fnKey.binding.withAddedModifiers(.command)
+    static let defaultCancel = ShortcutBinding(
+        keyCode: 53,
+        keyDisplay: "Esc",
+        modifiers: [],
+        kind: .key,
+        preset: nil
+    )
 
     static let modifierKeyCodes: Set<UInt16> = [54, 55, 56, 58, 59, 60, 61, 62, 63]
 
