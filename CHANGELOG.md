@@ -10,6 +10,23 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.6] - 2026-07-21
+
+### Added
+
+- Ask Megaphone can now read the visible window, entirely on-device: requests like “reply to this email” or “answer his question” use the text on screen as reference. The accessibility tree is read first, with Vision OCR of the focused window as a fallback when Screen Recording is already granted — nothing ever leaves your Mac. Controlled by a new “Use on-screen text as context” toggle (on by default).
+- Formatting now adapts to the app you're dictating into. Markdown-native surfaces like Obsidian, Notion, and GitHub get markdown lists and structure; chat apps stay plain text; documents welcome lists. Dictated “bullet point …” markers become real list lines, and a clear “first…, second…, third…” enumeration in a document formats itself as a list.
+
+### Fixed
+
+- WhatsApp and Telegram now count as casual chat instead of general writing, and a window title that merely contains an email address no longer masquerades as webmail context.
+- Ask Megaphone responses no longer leak XML wrappers or echo prompt sections back into your text, and “make that a bulleted list” reliably replaces the dictation it refers to.
+- Follow-up wake commands replace the intended earlier dictation more reliably.
+
+### Removed
+
+- All legacy cloud plumbing inherited from FreeFlow is gone — roughly 2,600 lines including API-key handling, cloud endpoints, and cloud model defaults. The only remaining network calls are the GitHub updater and the repo star count. Command mode no longer asks for Screen Recording permission, which only the removed cloud screenshot path needed.
+
 ## [1.1.5] - 2026-07-17
 
 ### Added
