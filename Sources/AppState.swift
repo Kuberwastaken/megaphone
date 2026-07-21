@@ -244,6 +244,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let stopSoundNameStorageKey = "stop_sound_name"
     private let errorSoundNameStorageKey = "error_sound_name"
     private let voiceMacrosStorageKey = "voice_macros"
+    private let userTransformsStorageKey = "user_transforms"
     private let wakeCommandsEnabledStorageKey = "wake_commands_enabled"
     private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
     private let wakeScreenContextEnabledStorageKey = "wake_screen_context_enabled"
@@ -523,6 +524,20 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @Published var userTransforms: [Transform] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(userTransforms) {
+                UserDefaults.standard.set(data, forKey: userTransformsStorageKey)
+            }
+        }
+    }
+
+    /// Built-in transforms merged with the user's own; a user transform
+    /// shadows a built-in with the same name.
+    var transforms: [Transform] {
+        TransformStore.resolved(userTransforms: userTransforms)
+    }
+
     @Published var plainMegaphoneWakeWordEnabled: Bool {
         didSet {
             UserDefaults.standard.set(plainMegaphoneWakeWordEnabled, forKey: plainMegaphoneWakeWordEnabledStorageKey)
@@ -696,6 +711,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
         } else {
             initialMacros = []
         }
+        let initialUserTransforms: [Transform]
+        if let data = UserDefaults.standard.data(forKey: "user_transforms"),
+           let decoded = try? JSONDecoder().decode([Transform].self, from: data) {
+            initialUserTransforms = decoded
+        } else {
+            initialUserTransforms = []
+        }
         let plainMegaphoneWakeWordEnabled = UserDefaults.standard.bool(
             forKey: plainMegaphoneWakeWordEnabledStorageKey
         )
@@ -754,6 +776,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.stopSoundName = stopSoundName
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
+        self.userTransforms = initialUserTransforms
         self.wakeCommandsEnabled = wakeCommandsEnabled
         self.wakeScreenContextEnabled = wakeScreenContextEnabled
         self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
@@ -2333,6 +2356,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case commandModeFailedFallback(invocation: CommandInvocation)
         case wakeCommandSucceeded(phrase: WakePhrase, elapsed: TimeInterval)
         case wakeCommandFailedFallback(phrase: WakePhrase, reason: String)
+        case transformApplied(name: String, elapsed: TimeInterval)
 
         func statusMessage(isRetry: Bool = false) -> String {
             switch self {
@@ -2357,6 +2381,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return "\(phrase.displayName) command succeeded (\(String(format: "%.2fs", elapsed)))"
             case .wakeCommandFailedFallback(let phrase, let reason):
                 return "\(phrase.displayName) command unavailable; pasted request (\(reason))"
+            case .transformApplied(let name, let elapsed):
+                return "Transform “\(name)” applied (\(String(format: "%.2fs", elapsed)))"
             }
         }
     }
@@ -2434,6 +2460,42 @@ final class AppState: ObservableObject, @unchecked Sendable {
             let command = wake.trailingText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !command.isEmpty else {
                 return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "", nil)
+            }
+            // Transform invocations ("polish that") are matched
+            // deterministically and never routed through the command model:
+            // the named directive is applied to the recent dictation and the
+            // result replaces it, exactly like REPLACE_PREVIOUS.
+            if let transform = TransformStore.match(command: command, in: transforms) {
+                guard let previousText, !previousText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return (
+                        "",
+                        .wakeCommandFailedFallback(phrase: wake.phrase, reason: "no recent dictation to transform"),
+                        "",
+                        nil
+                    )
+                }
+                do {
+                    let result = try await AppleFoundationModelsPostProcessor.shared.applyTransform(
+                        instruction: transform.instruction,
+                        to: previousText,
+                        vocabulary: vocabulary,
+                        timeout: 5
+                    )
+                    return (
+                        result.text,
+                        .transformApplied(name: transform.name, elapsed: result.elapsed),
+                        result.prompt,
+                        previousText
+                    )
+                } catch {
+                    os_log(.error, log: recordingLog, "Transform failed: %{public}@", error.localizedDescription)
+                    return (
+                        command,
+                        .wakeCommandFailedFallback(phrase: wake.phrase, reason: error.localizedDescription),
+                        "",
+                        nil
+                    )
+                }
             }
             // Read the visible window text on-device so requests that point
             // at on-screen content ("reply to this email") have their source.
