@@ -9,7 +9,7 @@ final class HotkeyManager {
     private var inputState = ShortcutInputState()
 
     var onShortcutEvent: ((ShortcutEvent) -> Void)?
-    var onEscapeKeyPressed: (() -> Bool)?
+    var onCancelKeyPressed: (() -> Bool)?
     /// Down/up of the configured mouse dictation button. Return true to
     /// consume the click. Only fired when start(...) received a button.
     var onMouseButtonEvent: ((_ isDown: Bool) -> Bool)?
@@ -28,17 +28,18 @@ final class HotkeyManager {
         backend.onInputEvent = { [weak self] event in
             self?.handleInputEvent(event) ?? .passthrough
         }
-        backend.onEscapeKeyPressed = { [weak self] in
-            self?.onEscapeKeyPressed?() ?? false
+        backend.onCancelKeyPressed = { [weak self] in
+            self?.onCancelKeyPressed?() ?? false
         }
         backend.onMouseButtonEvent = { [weak self] isDown in
             self?.onMouseButtonEvent?(isDown) ?? false
         }
+        backend.cancelBinding = ShortcutBinding.sanitizedCancelBinding(configuration.cancel)
         do {
             try backend.start(mouseButtonNumber: mouseButtonNumber)
         } catch {
             backend.onInputEvent = nil
-            backend.onEscapeKeyPressed = nil
+            backend.onCancelKeyPressed = nil
             backend.onMouseButtonEvent = nil
             inputState = ShortcutInputState()
             throw error
@@ -48,7 +49,7 @@ final class HotkeyManager {
     func stop() {
         backend.stop()
         backend.onInputEvent = nil
-        backend.onEscapeKeyPressed = nil
+        backend.onCancelKeyPressed = nil
         backend.onMouseButtonEvent = nil
         inputState = ShortcutInputState()
     }

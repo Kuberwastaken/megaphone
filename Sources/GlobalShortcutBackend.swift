@@ -24,7 +24,12 @@ final class GlobalShortcutBackend {
     private var mouseButtonNumber: Int64?
 
     var onInputEvent: ((ShortcutInputEvent) -> ShortcutConsumeDecision)?
-    var onEscapeKeyPressed: (() -> Bool)?
+    var onCancelKeyPressed: (() -> Bool)?
+    /// The binding that cancels an active dictation session. Only consulted on
+    /// key-down; the event is swallowed only when `onCancelKeyPressed` reports
+    /// that a session was actually cancelled, so the key types normally the
+    /// rest of the time.
+    var cancelBinding: ShortcutBinding = .defaultCancel
     /// Fired for down/up of the configured non-primary mouse button.
     /// Return true to consume the click so it never reaches the target app.
     var onMouseButtonEvent: ((_ isDown: Bool) -> Bool)?
@@ -165,9 +170,15 @@ final class GlobalShortcutBackend {
     }
 
     private func handleKeyDown(_ event: NSEvent) -> Bool {
-        if event.keyCode == 53 {
+        let activeModifiers = ShortcutBinding.modifiers(
+            for: ModifierKeyEventState.pressedModifierKeyCodes(
+                for: event,
+                trustedFunctionKeyIsDown: fnKeyIsDown
+            )
+        )
+        if cancelBinding.matchesCancelKeyDown(keyCode: event.keyCode, activeModifiers: activeModifiers) {
             guard !event.isARepeat else { return false }
-            return onEscapeKeyPressed?() ?? false
+            return onCancelKeyPressed?() ?? false
         }
 
         guard !ShortcutBinding.modifierKeyCodes.contains(event.keyCode) else { return false }

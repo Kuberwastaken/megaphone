@@ -11,6 +11,7 @@ struct DictationShortcutEditor: View {
     @State private var holdValidationMessage: String?
     @State private var toggleValidationMessage: String?
     @State private var copyAgainValidationMessage: String?
+    @State private var cancelValidationMessage: String?
 
     init(showsIntroText: Bool = true, onCaptureStateChange: ((Bool) -> Void)? = nil) {
         self.showsIntroText = showsIntroText
@@ -70,6 +71,18 @@ struct DictationShortcutEditor: View {
                 }
             )
 
+            CancelShortcutSection(
+                selection: appState.cancelShortcut,
+                validationMessage: cancelValidationMessage,
+                isCapturing: Binding(
+                    get: { activeCaptureRole == .cancel },
+                    set: { activeCaptureRole = $0 ? .cancel : nil }
+                ),
+                onSelect: { binding in
+                    cancelValidationMessage = appState.setShortcut(binding, for: .cancel)
+                }
+            )
+
             Text("Custom shortcuts can use regular keys, modifier-only shortcuts, or modifier combinations.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -120,6 +133,50 @@ struct ShortcutRoleSection: View {
                 ShortcutCaptureRow(
                     savedBinding: appState.savedCustomShortcut(for: role),
                     isSelected: selection.isCustom,
+                    isCapturing: $isCapturing,
+                    onSelectSaved: onSelect,
+                    onCapture: onSelect
+                )
+            }
+
+            if let validationMessage, !validationMessage.isEmpty {
+                Label(validationMessage, systemImage: "xmark.circle.fill")
+                    .font(.caption)
+                    .foregroundStyle(.red)
+            }
+        }
+    }
+}
+
+/// Settings row for the cancel-dictation key. Unlike the dictation roles it
+/// cannot be disabled and has a single Escape default instead of the preset
+/// list; selecting the default row doubles as reset-to-default.
+struct CancelShortcutSection: View {
+    @EnvironmentObject var appState: AppState
+    let selection: ShortcutBinding
+    let validationMessage: String?
+    @Binding var isCapturing: Bool
+    let onSelect: (ShortcutBinding) -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(ShortcutRole.cancel.title)
+                .font(.subheadline.weight(.semibold))
+
+            Text("Press this key while dictating or transcribing to cancel without pasting.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            VStack(spacing: 6) {
+                ShortcutPresetRow(
+                    title: "Esc (Default)",
+                    isSelected: selection == .defaultCancel,
+                    action: { onSelect(.defaultCancel) }
+                )
+
+                ShortcutCaptureRow(
+                    savedBinding: appState.savedCustomShortcut(for: .cancel),
+                    isSelected: selection != .defaultCancel,
                     isCapturing: $isCapturing,
                     onSelectSaved: onSelect,
                     onCapture: onSelect

@@ -156,6 +156,15 @@ struct MenuBarView: View {
                     .frame(maxWidth: 280, alignment: .leading)
             }
 
+            // Wispr Flow-style "AI edit undo": swap the last cleaned
+            // dictation still at the caret for the literal transcript.
+            // Disabled when no recent dictation is revertible or the cleanup
+            // made no edits (raw == cleaned).
+            Button("Revert Last Cleanup") {
+                appState.revertLastDictationToRaw()
+            }
+            .disabled(!appState.canRevertLastDictationToRaw)
+
             Menu("History") {
                 if recentHistoryItems.isEmpty {
                     Text("No transcripts yet")
