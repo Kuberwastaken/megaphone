@@ -39,6 +39,37 @@ struct SmartCleanupRequest: Sendable {
     let corrections: [Correction]
     let outputLanguage: String
     let customInstructions: String
+    var formality: WritingFormality = .balanced
+}
+
+/// The user's standing preference for how their words are polished in a given
+/// writing context. This is a register/punctuation dial for cleanup, never a
+/// rewrite instruction: meaning, ideas, and hedges always stay the speaker's.
+enum WritingFormality: String, Codable, CaseIterable, Sendable {
+    case casual
+    case balanced
+    case formal
+
+    /// One short sentence appended to the cleanup guidance. `balanced` is the
+    /// current behavior and adds nothing.
+    var guidanceSentence: String? {
+        switch self {
+        case .balanced:
+            return nil
+        case .casual:
+            return "The speaker prefers a relaxed register: contractions are welcome and punctuation stays light."
+        case .formal:
+            return "The speaker prefers a polished register: full sentences, professional punctuation, and spoken shorthand written out — “gonna” becomes “going to”, “wanna” becomes “want to”."
+        }
+    }
+
+    var title: String {
+        switch self {
+        case .casual: return "Casual"
+        case .balanced: return "Balanced"
+        case .formal: return "Formal"
+        }
+    }
 }
 
 enum AppWritingContext: String, Equatable, Sendable {
@@ -121,7 +152,7 @@ enum AppWritingContext: String, Equatable, Sendable {
         }
     }
 
-    func cleanupGuidance(markdown: Bool) -> String {
+    func cleanupGuidance(markdown: Bool, formality: WritingFormality = .balanced) -> String {
         let base: String
         switch self {
         case .email:
@@ -137,12 +168,19 @@ enum AppWritingContext: String, Equatable, Sendable {
         case .neutral:
             base = "Use neutral, readable punctuation and preserve the speaker's tone."
         }
-        guard markdown else { return base }
-        return base + " Markdown renders here: use markdown lists, emphasis, and headers when the dictation clearly calls for them."
+        var guidance = base
+        if markdown {
+            guidance += " Markdown renders here: use markdown lists, emphasis, and headers when the dictation clearly calls for them."
+        }
+        // Technical surfaces are exempt: the dial never touches code or commands.
+        if self != .codeOrTerminal, let preference = formality.guidanceSentence {
+            guidance += " " + preference
+        }
+        return guidance
     }
 
-    func commandGuidance(markdown: Bool) -> String {
-        "When the request does not specify a style, shape the result for \(label). \(cleanupGuidance(markdown: markdown)) An explicit style request always wins."
+    func commandGuidance(markdown: Bool, formality: WritingFormality = .balanced) -> String {
+        "When the request does not specify a style, shape the result for \(label). \(cleanupGuidance(markdown: markdown, formality: formality)) An explicit style request always wins."
     }
 }
 
@@ -256,6 +294,7 @@ actor AppleFoundationModelsPostProcessor {
         bundleIdentifier: String?,
         windowTitle: String?,
         vocabulary: [String],
+        formality: WritingFormality = .balanced,
         sessionID: UUID?,
         timeout: TimeInterval
     ) async throws -> SmartCleanupResponse {
@@ -274,7 +313,8 @@ actor AppleFoundationModelsPostProcessor {
             appName: appName,
             bundleIdentifier: bundleIdentifier,
             windowTitle: windowTitle,
-            vocabulary: vocabulary
+            vocabulary: vocabulary,
+            formality: formality
         )
         let started = ContinuousClock.now
         let output = Self.normalizeCommandOutput(
@@ -294,7 +334,8 @@ actor AppleFoundationModelsPostProcessor {
         appName: String?,
         bundleIdentifier: String?,
         windowTitle: String?,
-        vocabulary: [String]
+        vocabulary: [String],
+        formality: WritingFormality = .balanced
     ) -> String {
         let vocabularyHint = vocabulary.isEmpty
             ? ""
@@ -313,7 +354,7 @@ actor AppleFoundationModelsPostProcessor {
         )
         return """
         \(appHint)\(windowHint)Writing context: \(writingContext.label)
-        App-aware guidance: Apply this only when the spoken editing command does not specify another style. \(writingContext.cleanupGuidance(markdown: markdown))
+        App-aware guidance: Apply this only when the spoken editing command does not specify another style. \(writingContext.cleanupGuidance(markdown: markdown, formality: formality))
         \(vocabularyHint)SELECTED TEXT:
         <selected_text>
         \(selectedText)
@@ -336,6 +377,7 @@ actor AppleFoundationModelsPostProcessor {
         previousText: String?,
         screenText: String? = nil,
         vocabulary: [String],
+        formality: WritingFormality = .balanced,
         timeout: TimeInterval
     ) async throws -> WakeCommandResponse {
         guard case .available = availability() else {
@@ -357,7 +399,8 @@ actor AppleFoundationModelsPostProcessor {
             selectedText: selectedText,
             previousText: previousText,
             screenText: screenText,
-            vocabulary: vocabulary
+            vocabulary: vocabulary,
+            formality: formality
         )
         let started = ContinuousClock.now
         let rawOutput = Self.normalizeCommandOutput(
@@ -405,7 +448,8 @@ actor AppleFoundationModelsPostProcessor {
         selectedText: String?,
         previousText: String?,
         screenText: String? = nil,
-        vocabulary: [String]
+        vocabulary: [String],
+        formality: WritingFormality = .balanced
     ) -> String {
         let vocabularyHint = vocabulary.isEmpty
             ? ""
@@ -424,7 +468,7 @@ actor AppleFoundationModelsPostProcessor {
         )
         let writingHint = """
         Writing context: \(writingContext.label)
-        App-aware guidance: \(writingContext.commandGuidance(markdown: markdown))
+        App-aware guidance: \(writingContext.commandGuidance(markdown: markdown, formality: formality))
         """
         let contextHint = contextSummary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             ? ""
@@ -570,7 +614,7 @@ actor AppleFoundationModelsPostProcessor {
             windowTitle: request.windowTitle
         )
         hints.append("Writing context: \(writingContext.label)")
-        hints.append("App-aware cleanup: \(writingContext.cleanupGuidance(markdown: markdown))")
+        hints.append("App-aware cleanup: \(writingContext.cleanupGuidance(markdown: markdown, formality: request.formality))")
         if let selected = request.selectedText?.trimmingCharacters(in: .whitespacesAndNewlines), !selected.isEmpty {
             hints.append("Nearby selected text (spelling/tone hint only): \(selected.prefix(300))")
         }
