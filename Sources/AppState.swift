@@ -252,6 +252,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
     private let outputLanguageStorageKey = "output_language"
     private let dictationAudioInterruptionEnabledStorageKey = "dictation_audio_interruption_enabled"
+    private let mouseDictationEnabledStorageKey = "mouse_dictation_enabled"
+    private let mouseDictationButtonStorageKey = "mouse_dictation_button"
     private let pasteAfterShortcutReleaseDelay: TimeInterval = 0.03
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
     private let clipboardRestoreDelay: TimeInterval = 1.0
@@ -302,6 +304,20 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published private(set) var savedCopyAgainCustomShortcut: ShortcutBinding? {
         didSet {
             persistOptionalShortcut(savedCopyAgainCustomShortcut, key: savedCopyAgainCustomShortcutStorageKey)
+        }
+    }
+
+    @Published var isMouseDictationEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isMouseDictationEnabled, forKey: mouseDictationEnabledStorageKey)
+            restartHotkeyMonitoring()
+        }
+    }
+
+    @Published var mouseDictationButton: Int {
+        didSet {
+            UserDefaults.standard.set(mouseDictationButton, forKey: mouseDictationButtonStorageKey)
+            restartHotkeyMonitoring()
         }
     }
 
@@ -593,6 +609,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var shouldMonitorHotkeys = false
     private var isCapturingShortcut = false
     private var isAwaitingMicrophonePermission = false
+    /// True from the configured mouse button's down until its up (or until
+    /// something else ends the session first). Gates which otherMouse events
+    /// the tap consumes and whether the up should stop dictation.
+    private var isMouseHoldSessionActive = false
     private var pendingMicrophonePermissionTriggerMode: RecordingTriggerMode?
     private var pendingMicrophonePermissionSelectionSnapshot: AppSelectionSnapshot?
     private var pendingMicrophonePermissionManualCommandRequested: Bool?
@@ -644,6 +664,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let commandModeManualModifier = CommandModeManualModifier(
             rawValue: UserDefaults.standard.string(forKey: commandModeManualModifierStorageKey) ?? ""
         ) ?? .option
+        let isMouseDictationEnabled = UserDefaults.standard.bool(forKey: mouseDictationEnabledStorageKey)
+        let mouseDictationButton = MouseDictationButton.normalized(
+            UserDefaults.standard.object(forKey: mouseDictationButtonStorageKey) as? Int
+                ?? MouseDictationButton.defaultButtonNumber
+        )
         let preserveClipboard = UserDefaults.standard.object(forKey: preserveClipboardStorageKey) == nil
             ? true
             : UserDefaults.standard.bool(forKey: preserveClipboardStorageKey)
@@ -709,6 +734,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.isCommandModeEnabled = isCommandModeEnabled
         self.commandModeStyle = commandModeStyle
         self.commandModeManualModifier = commandModeManualModifier
+        self.isMouseDictationEnabled = isMouseDictationEnabled
+        self.mouseDictationButton = mouseDictationButton
         self.customVocabulary = customVocabulary
         self.wordCorrections = wordCorrections
         self.smartCleanupMode = smartCleanupMode
@@ -1511,6 +1538,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         hotkeyManager.onEscapeKeyPressed = { [weak self] in
             self?.handleEscapeKeyPress() ?? false
         }
+        hotkeyManager.onMouseButtonEvent = { [weak self] isDown in
+            self?.handleMouseDictationButtonEvent(isDown: isDown) ?? false
+        }
         restartHotkeyMonitoring()
     }
 
@@ -1519,6 +1549,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         hotkeyMonitoringErrorMessage = nil
         hotkeyManager.onShortcutEvent = nil
         hotkeyManager.onEscapeKeyPressed = nil
+        hotkeyManager.onMouseButtonEvent = nil
         hotkeyManager.stop()
     }
 
@@ -1555,7 +1586,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
 
         do {
-            try hotkeyManager.start(configuration: activeShortcutConfiguration)
+            try hotkeyManager.start(
+                configuration: activeShortcutConfiguration,
+                mouseButtonNumber: isMouseDictationEnabled ? mouseDictationButton : nil
+            )
             hotkeyMonitoringErrorMessage = nil
         } catch {
             hotkeyMonitoringErrorMessage = error.localizedDescription
@@ -1593,6 +1627,40 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 pendingShortcutStartMode = .toggle
             }
         }
+    }
+
+    /// Mouse push-to-talk. Down starts a hold session through the exact same
+    /// funnel the keyboard uses (handleShortcutEvent → session controller);
+    /// up ends it. Runs synchronously inside the event-tap callback, so the
+    /// consume decision is made from cheap state checks and the actual
+    /// session work is deferred to the next main-queue turn — mirroring how
+    /// keyboard shortcut events are dispatched.
+    /// Returns true to swallow the click so it never reaches the target app.
+    private func handleMouseDictationButtonEvent(isDown: Bool) -> Bool {
+        if isDown {
+            // A keyboard-triggered session (or in-flight transcription) wins:
+            // let the click through untouched.
+            guard shortcutSessionController.activeMode == nil, !isTranscribing else {
+                return false
+            }
+            isMouseHoldSessionActive = true
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.isMouseHoldSessionActive else { return }
+                self.handleShortcutEvent(.holdActivated)
+                if self.shortcutSessionController.activeMode != .hold {
+                    self.isMouseHoldSessionActive = false
+                }
+            }
+            return true
+        }
+
+        guard isMouseHoldSessionActive else { return false }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isMouseHoldSessionActive else { return }
+            self.isMouseHoldSessionActive = false
+            self.handleShortcutEvent(.holdDeactivated)
+        }
+        return true
     }
 
     private func handleEscapeKeyPress() -> Bool {
@@ -1642,6 +1710,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         cancelPendingShortcutStart()
         shortcutSessionController.reset()
+        isMouseHoldSessionActive = false
         activeRecordingTriggerMode = nil
         audioRecorder.onRecordingReady = nil
         audioRecorder.onRecordingFailure = nil
@@ -1951,6 +2020,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         pendingMicrophonePermissionManualCommandRequested = manualCommandRequested
         hotkeyManager.stop()
         shortcutSessionController.reset()
+        isMouseHoldSessionActive = false
         activeRecordingTriggerMode = nil
         cancelRecordingInitializationTimer()
         audioRecorder.onRecordingReady = nil
@@ -2540,6 +2610,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         cancelPendingShortcutStart()
         cancelRecordingInitializationTimer()
         shortcutSessionController.reset()
+        isMouseHoldSessionActive = false
         activeRecordingTriggerMode = nil
         let sessionIntent = currentSessionIntent
         let cleanupSessionID = smartCleanupSessionID
