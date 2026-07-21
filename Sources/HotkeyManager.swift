@@ -10,6 +10,9 @@ final class HotkeyManager {
 
     var onShortcutEvent: ((ShortcutEvent) -> Void)?
     var onEscapeKeyPressed: (() -> Bool)?
+    /// Down/up of the configured mouse dictation button. Return true to
+    /// consume the click. Only fired when start(...) received a button.
+    var onMouseButtonEvent: ((_ isDown: Bool) -> Bool)?
 
     var currentPressedModifiers: ShortcutModifiers {
         inputState.currentModifiers
@@ -19,7 +22,7 @@ final class HotkeyManager {
         inputState.hasPressedShortcutInputs(configuration: configuration)
     }
 
-    func start(configuration: ShortcutConfiguration) throws {
+    func start(configuration: ShortcutConfiguration, mouseButtonNumber: Int? = nil) throws {
         stop()
         self.configuration = configuration
         backend.onInputEvent = { [weak self] event in
@@ -28,11 +31,15 @@ final class HotkeyManager {
         backend.onEscapeKeyPressed = { [weak self] in
             self?.onEscapeKeyPressed?() ?? false
         }
+        backend.onMouseButtonEvent = { [weak self] isDown in
+            self?.onMouseButtonEvent?(isDown) ?? false
+        }
         do {
-            try backend.start()
+            try backend.start(mouseButtonNumber: mouseButtonNumber)
         } catch {
             backend.onInputEvent = nil
             backend.onEscapeKeyPressed = nil
+            backend.onMouseButtonEvent = nil
             inputState = ShortcutInputState()
             throw error
         }
@@ -42,6 +49,7 @@ final class HotkeyManager {
         backend.stop()
         backend.onInputEvent = nil
         backend.onEscapeKeyPressed = nil
+        backend.onMouseButtonEvent = nil
         inputState = ShortcutInputState()
     }
 

@@ -21,18 +21,24 @@ final class GlobalShortcutBackend {
     private var eventTap: CFMachPort?
     private var eventTapRunLoopSource: CFRunLoopSource?
     private var fnKeyIsDown = false
+    private var mouseButtonNumber: Int64?
 
     var onInputEvent: ((ShortcutInputEvent) -> ShortcutConsumeDecision)?
     var onEscapeKeyPressed: (() -> Bool)?
+    /// Fired for down/up of the configured non-primary mouse button.
+    /// Return true to consume the click so it never reaches the target app.
+    var onMouseButtonEvent: ((_ isDown: Bool) -> Bool)?
 
-    func start() throws {
+    func start(mouseButtonNumber: Int? = nil) throws {
         stop()
+        self.mouseButtonNumber = mouseButtonNumber.map(Int64.init)
         try installEventTap()
         fnKeyIsDown = ModifierKeyEventState.currentFunctionKeyIsDown()
     }
 
     func stop() {
         tearDownEventTap()
+        mouseButtonNumber = nil
         notifyBackendReset()
     }
 
@@ -41,11 +47,15 @@ final class GlobalShortcutBackend {
     }
 
     private func installEventTap() throws {
-        let eventMask = [
-            CGEventType.flagsChanged,
-            CGEventType.keyDown,
-            CGEventType.keyUp
-        ].reduce(CGEventMask(0)) { partialResult, eventType in
+        var eventTypes: [CGEventType] = [
+            .flagsChanged,
+            .keyDown,
+            .keyUp
+        ]
+        if mouseButtonNumber != nil {
+            eventTypes.append(contentsOf: [.otherMouseDown, .otherMouseUp])
+        }
+        let eventMask = eventTypes.reduce(CGEventMask(0)) { partialResult, eventType in
             partialResult | (CGEventMask(1) << eventType.rawValue)
         }
 
@@ -126,6 +136,14 @@ final class GlobalShortcutBackend {
                 shouldConsume = false
             }
 
+            return shouldConsume ? nil : Unmanaged.passUnretained(event)
+
+        case .otherMouseDown, .otherMouseUp:
+            guard let mouseButtonNumber,
+                  event.getIntegerValueField(.mouseEventButtonNumber) == mouseButtonNumber else {
+                return Unmanaged.passUnretained(event)
+            }
+            let shouldConsume = onMouseButtonEvent?(type == .otherMouseDown) ?? false
             return shouldConsume ? nil : Unmanaged.passUnretained(event)
 
         default:
