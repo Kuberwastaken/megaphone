@@ -1019,6 +1019,15 @@ struct GeneralSettingsView: View {
             Text("When the transcription ends with \"press enter\", \(AppName.displayName) removes those words before cleanup, pastes the remaining transcript, then presses Return.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+
+            Divider()
+                .padding(.vertical, 2)
+
+            Toggle("“Scratch that” deletes the last dictation", isOn: $appState.isScratchThatCommandEnabled)
+
+            Text("When an entire dictation is \"scratch that\" or \"delete that\", \(AppName.displayName) deletes the dictation it just pasted instead of typing the words — as long as that text still sits right before your cursor.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
