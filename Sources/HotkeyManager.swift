@@ -9,7 +9,7 @@ final class HotkeyManager {
     private var inputState = ShortcutInputState()
 
     var onShortcutEvent: ((ShortcutEvent) -> Void)?
-    var onEscapeKeyPressed: (() -> Bool)?
+    var onCancelKeyPressed: (() -> Bool)?
 
     var currentPressedModifiers: ShortcutModifiers {
         inputState.currentModifiers
@@ -25,14 +25,15 @@ final class HotkeyManager {
         backend.onInputEvent = { [weak self] event in
             self?.handleInputEvent(event) ?? .passthrough
         }
-        backend.onEscapeKeyPressed = { [weak self] in
-            self?.onEscapeKeyPressed?() ?? false
+        backend.onCancelKeyPressed = { [weak self] in
+            self?.onCancelKeyPressed?() ?? false
         }
+        backend.cancelBinding = ShortcutBinding.sanitizedCancelBinding(configuration.cancel)
         do {
             try backend.start()
         } catch {
             backend.onInputEvent = nil
-            backend.onEscapeKeyPressed = nil
+            backend.onCancelKeyPressed = nil
             inputState = ShortcutInputState()
             throw error
         }
@@ -41,7 +42,7 @@ final class HotkeyManager {
     func stop() {
         backend.stop()
         backend.onInputEvent = nil
-        backend.onEscapeKeyPressed = nil
+        backend.onCancelKeyPressed = nil
         inputState = ShortcutInputState()
     }
 
