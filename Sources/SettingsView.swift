@@ -442,6 +442,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Cleanup", icon: "sparkles") {
                     cleanupSection
                 }
+                SettingsCard("Writing Style", icon: "textformat") {
+                    writingStyleSection
+                }
                 SettingsCard("Output Language", icon: "globe") {
                     outputLanguageSection
                 }
@@ -749,6 +752,41 @@ struct GeneralSettingsView: View {
             return "Instant deterministic cleanup for fillers, stutters, repeated words, and spacing."
         case .exact:
             return "Preserves the words you spoke, with only the minimum formatting needed for insertion."
+        }
+    }
+
+    // MARK: Writing Style
+
+    private var writingStyleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            formalityRow("Email", context: .email)
+            formalityRow("Work chat", context: .workChat)
+            formalityRow("Personal chat", context: .casualChat)
+            formalityRow("Documents", context: .document)
+            formalityRow("Everything else", context: .neutral)
+
+            Text("How Smart Cleanup punctuates and polishes your words in each kind of app. Your wording and meaning are never changed; code and terminal apps always stay technical.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func formalityRow(_ label: String, context: AppWritingContext) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+            Spacer()
+            Picker("", selection: Binding(
+                get: { appState.writingFormality(for: context) },
+                set: { appState.setWritingFormality($0, for: context) }
+            )) {
+                ForEach(WritingFormality.allCases, id: \.self) { formality in
+                    Text(formality.title).tag(formality)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 260)
         }
     }
 
