@@ -7,9 +7,12 @@ struct AppContextServiceTests {
         testQwenReasoningOutputIsStripped()
         testNonStrippingModelPreservesExistingBehavior()
         testWakeCommandIncludesPreviousTextAndScreenContext()
+        testWakeCommandIncludesVisibleWindowText()
         testWakeCommandResponseWrappersAreRemoved()
+        testWakeCommandOutputTagRepair()
         testWakeCommandRoutingIsParsed()
         testAppWritingContextClassification()
+        testMarkdownSurfaceDetection()
         testCleanupPromptUsesLocalAppStyle()
         testSelectionPromptUsesDestinationContext()
         TranscriptTidierTests.run()
@@ -82,6 +85,108 @@ struct AppContextServiceTests {
         expect(prompt.contains("Context: The user is composing an email reply."), "Screen context missing")
         expect(prompt.contains("Current selected text: Earlier text selected in the draft."), "Selected screen text missing")
         expect(prompt.contains("make that formal"), "Spoken follow-up missing")
+    }
+
+    private static func testWakeCommandIncludesVisibleWindowText() {
+        let withScreen = AppleFoundationModelsPostProcessor.commandPrompt(
+            command: "reply to this email saying thanks",
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            windowTitle: "Inbox - Gmail",
+            contextSummary: "",
+            selectedText: nil,
+            previousText: nil,
+            screenText: "From: Sam\nSubject: Trying Megaphone\nLoving the app so far!",
+            vocabulary: []
+        )
+        expect(withScreen.contains("VISIBLE WINDOW TEXT"), "Screen text section missing")
+        expect(withScreen.contains("Loving the app so far!"), "Screen text content missing")
+
+        let withoutScreen = AppleFoundationModelsPostProcessor.commandPrompt(
+            command: "reply to this email saying thanks",
+            appName: "Google Chrome",
+            bundleIdentifier: "com.google.Chrome",
+            windowTitle: "Inbox - Gmail",
+            contextSummary: "",
+            selectedText: nil,
+            previousText: nil,
+            screenText: nil,
+            vocabulary: []
+        )
+        expect(!withoutScreen.contains("VISIBLE WINDOW TEXT"), "Screen text section should be omitted when empty")
+    }
+
+    private static func testWakeCommandOutputTagRepair() {
+        let echoed = """
+        <previous_text>
+        I want to do three things: wash the dishes, get the Coke, buy coffee.
+        </previous_text>
+        <bulleted_list>
+        <item>Wash the dishes</item>
+        <item>Get the Coke</item>
+        <item>Buy coffee</item>
+        </bulleted_list>
+        """
+        expectEqual(
+            AppleFoundationModelsPostProcessor.normalizeCommandOutput(echoed),
+            "- Wash the dishes\n- Get the Coke\n- Buy coffee"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.normalizeCommandOutput("<answer>Sounds good, see you at 5.</answer>"),
+            "Sounds good, see you at 5."
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.normalizeCommandOutput("Use a <strong>bold</strong> tag here."),
+            "Use a <strong>bold</strong> tag here."
+        )
+    }
+
+    private static func testMarkdownSurfaceDetection() {
+        expect(
+            AppWritingContext.supportsMarkdown(appName: "Obsidian", bundleIdentifier: "md.obsidian", windowTitle: "Daily note"),
+            "Obsidian should be a markdown surface"
+        )
+        expect(
+            AppWritingContext.supportsMarkdown(appName: "Google Chrome", bundleIdentifier: "com.google.Chrome", windowTitle: "Editing megaphone/README.md at main · Kuberwastaken/megaphone · GitHub"),
+            "GitHub in a browser should be a markdown surface"
+        )
+        expect(
+            !AppWritingContext.supportsMarkdown(appName: "WhatsApp", bundleIdentifier: "net.whatsapp.WhatsApp", windowTitle: nil),
+            "WhatsApp must not be a markdown surface"
+        )
+        expect(
+            !AppWritingContext.supportsMarkdown(appName: "Notes", bundleIdentifier: "com.apple.Notes", windowTitle: "Notes – 7 notes"),
+            "Apple Notes must not be a markdown surface"
+        )
+
+        let obsidianPrompt = AppleFoundationModelsPostProcessor.cleanupPrompt(for: SmartCleanupRequest(
+            transcript: "first wash the dishes second buy coffee",
+            appName: "Obsidian",
+            bundleIdentifier: "md.obsidian",
+            windowTitle: "Daily note",
+            selectedText: nil,
+            contextSummary: "",
+            vocabulary: [],
+            corrections: [],
+            outputLanguage: "",
+            customInstructions: ""
+        ))
+        expect(obsidianPrompt.contains("Markdown renders here"), "Obsidian cleanup prompt lost markdown guidance")
+
+        let whatsappPrompt = AppleFoundationModelsPostProcessor.cleanupPrompt(for: SmartCleanupRequest(
+            transcript: "first wash the dishes second buy coffee",
+            appName: "WhatsApp",
+            bundleIdentifier: "net.whatsapp.WhatsApp",
+            windowTitle: "Mom",
+            selectedText: nil,
+            contextSummary: "",
+            vocabulary: [],
+            corrections: [],
+            outputLanguage: "",
+            customInstructions: ""
+        ))
+        expect(whatsappPrompt.contains("never markdown syntax"), "WhatsApp cleanup prompt should forbid markdown")
+        expect(!whatsappPrompt.contains("Markdown renders here"), "WhatsApp must not advertise markdown")
     }
 
     private static func testAppWritingContextClassification() {
