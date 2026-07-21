@@ -165,7 +165,7 @@ struct WakeCommandResponse: Sendable {
 actor AppleFoundationModelsPostProcessor {
     static let shared = AppleFoundationModelsPostProcessor()
 
-    private static let instructions = """
+    static let dictationInstructions = """
     Clean literal speech transcripts. Return only cleaned text. Make minimum edits. Preserve every clear idea, clause, request, hedge, tone, and level of detail; never summarize or make the text more direct. “I think we should ship this tomorrow” stays “I think we should ship this tomorrow.” “The command is git push dash dash force with lease, and then check the JSON output” becomes “The command is git push --force-with-lease, and then check the JSON output.”
     Remove only hesitation fillers, stutters, duplicate starts, and abandoned wording. Fix punctuation, capitalization, spacing, and obvious recognition mistakes.
     Formatting follows the App-aware cleanup hint. Dictated list markers such as “bullet point”, “dash”, or “numbered list” become real list lines and the marker words are never kept: “bullet point wash the dishes bullet point buy coffee” becomes “- Wash the dishes” and “- Buy coffee” on separate lines. Where the hint says structure is welcome, a clearly itemized enumeration like “first…, second…, third…” also becomes a list with one item per line and no ordinal words, keeping any introductory clause (“I want to do three things:”) as a lead-in line above the list. Everywhere else, prose stays prose even when it contains “first” and “second”.
@@ -211,7 +211,7 @@ actor AppleFoundationModelsPostProcessor {
 
     func prepare(sessionID: UUID, editMode: Bool = false) {
         guard case .available = availability() else { return }
-        let session = makeSession(instructions: editMode ? Self.editInstructions : Self.instructions)
+        let session = makeSession(instructions: editMode ? Self.editInstructions : Self.dictationInstructions)
         preparedSessions = [sessionID: session]
         session.prewarm()
     }
@@ -234,10 +234,10 @@ actor AppleFoundationModelsPostProcessor {
 
         let session: LanguageModelSession
         if let sessionID {
-            session = preparedSessions.removeValue(forKey: sessionID) ?? makeSession(instructions: Self.instructions)
+            session = preparedSessions.removeValue(forKey: sessionID) ?? makeSession(instructions: Self.dictationInstructions)
             preparedSessions.removeAll()
         } else {
-            session = makeSession(instructions: Self.instructions)
+            session = makeSession(instructions: Self.dictationInstructions)
         }
 
         let prompt = Self.cleanupPrompt(for: request)

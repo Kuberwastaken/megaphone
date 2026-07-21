@@ -104,14 +104,14 @@ endif
 test: $(TEST_RUNNER)
 	@$(TEST_RUNNER)
 
-$(TEST_RUNNER): Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/WakePhraseMatcherTests.swift
+$(TEST_RUNNER): Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/WakePhraseMatcherTests.swift
 	@mkdir -p "$(BUILD_DIR)"
 	swiftc \
 		-parse-as-library \
 		-o "$(TEST_RUNNER)" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target $(ARCH)-apple-macosx26.0 \
-		Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/LLMAPITransport.swift Sources/ModelConfiguration.swift Sources/TranscriptTidier.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/WakePhraseMatcherTests.swift
+		Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/WakePhraseMatcherTests.swift
 
 icon: $(ICON_ICNS)
 

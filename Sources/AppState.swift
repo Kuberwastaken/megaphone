@@ -217,11 +217,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case muted(previouslyMuted: Bool)
     }
 
-    private let apiKeyStorageKey = "groq_api_key"
-    private let apiBaseURLStorageKey = "api_base_url"
-    private let postProcessingModelStorageKey = "post_processing_model"
-    private let postProcessingFallbackModelStorageKey = "post_processing_fallback_model"
-    private let contextModelStorageKey = "context_model"
     private let holdShortcutStorageKey = "hold_shortcut"
     private let toggleShortcutStorageKey = "toggle_shortcut"
     private let copyAgainShortcutStorageKey = "copy_again_shortcut"
@@ -238,7 +233,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let instructionExecutionGuardEnabledStorageKey = "instruction_execution_guard_enabled"
     private let customSystemPromptLastModifiedStorageKey = "custom_system_prompt_last_modified"
     private let customContextPromptLastModifiedStorageKey = "custom_context_prompt_last_modified"
-    private let contextScreenshotMaxDimensionStorageKey = "context_screenshot_max_dimension"
     private let shortcutStartDelayStorageKey = "shortcut_start_delay"
     private let preserveClipboardStorageKey = "preserve_clipboard"
     private let preserveExactWordingStorageKey = "preserve_exact_wording"
@@ -262,12 +256,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
     private let clipboardRestoreDelay: TimeInterval = 1.0
     let maxPipelineHistoryCount = 20
-    static let defaultContextScreenshotMaxDimension = Int(AppContextService.defaultScreenshotMaxDimension)
-    static let contextScreenshotDimensionOptions = [1024, 768, 640, 512]
-    static let defaultPostProcessingModel = "openai/gpt-oss-20b"
-    static let defaultPostProcessingFallbackModel = "meta-llama/llama-4-scout-17b-16e-instruct"
-    static let defaultContextModel = "qwen/qwen3.6-27b"
-    private static let deprecatedDefaultContextModel = "meta-llama/llama-4-scout-17b-16e-instruct"
     private static let trailingPressEnterCommandPattern = try! NSRegularExpression(
         pattern: #"(?i)(?:^|[ \t\r\n,;:\-]+)press[ \t\r\n]+enter[\s\p{P}]*$"#
     )
@@ -275,39 +263,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var hasCompletedSetup: Bool {
         didSet {
             UserDefaults.standard.set(hasCompletedSetup, forKey: "hasCompletedSetup")
-        }
-    }
-
-    @Published var apiKey: String {
-        didSet {
-            persistAPIKey(apiKey)
-            rebuildContextService()
-        }
-    }
-
-    @Published var apiBaseURL: String {
-        didSet {
-            persistAPIBaseURL(apiBaseURL)
-            rebuildContextService()
-        }
-    }
-
-    @Published var postProcessingModel: String {
-        didSet {
-            UserDefaults.standard.set(postProcessingModel, forKey: postProcessingModelStorageKey)
-        }
-    }
-
-    @Published var postProcessingFallbackModel: String {
-        didSet {
-            UserDefaults.standard.set(postProcessingFallbackModel, forKey: postProcessingFallbackModelStorageKey)
-        }
-    }
-
-    @Published var contextModel: String {
-        didSet {
-            UserDefaults.standard.set(contextModel, forKey: contextModelStorageKey)
-            rebuildContextService()
         }
     }
 
@@ -438,7 +393,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var customContextPrompt: String {
         didSet {
             UserDefaults.standard.set(customContextPrompt, forKey: customContextPromptStorageKey)
-            rebuildContextService()
         }
     }
 
@@ -448,17 +402,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 instructionExecutionGuardEnabled,
                 forKey: instructionExecutionGuardEnabledStorageKey
             )
-        }
-    }
-
-    @Published var contextScreenshotMaxDimension: Int {
-        didSet {
-            let normalizedDimension = Self.normalizedContextScreenshotMaxDimension(contextScreenshotMaxDimension)
-            if normalizedDimension != contextScreenshotMaxDimension {
-                contextScreenshotMaxDimension = normalizedDimension
-            }
-            UserDefaults.standard.set(contextScreenshotMaxDimension, forKey: contextScreenshotMaxDimensionStorageKey)
-            rebuildContextService()
         }
     }
 
@@ -629,10 +572,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var recordingInitializationTimer: DispatchSourceTimer?
     private var transcriptionTask: Task<Void, Never>?
     private var transcribingAudioFileName: String?
-    private var contextService: AppContextService
+    private let contextService = AppContextService()
     private var contextCaptureTask: Task<AppContext?, Never>?
     private var capturedContext: AppContext?
-    private var hasShownScreenshotPermissionAlert = false
     private var audioDeviceObservers: [NSObjectProtocol] = []
     private var needsMicrophoneRefreshAfterRecording = false
     private let pipelineHistoryStore = PipelineHistoryStore()
@@ -660,11 +602,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
     init() {
         UserDefaults.standard.removeObject(forKey: "force_http2_transcription")
         let hasCompletedSetup = UserDefaults.standard.bool(forKey: "hasCompletedSetup")
-        let apiKey = Self.loadStoredAPIKey(account: apiKeyStorageKey)
-        let apiBaseURL = Self.loadStoredAPIBaseURL(account: "api_base_url")
-        let postProcessingModel = UserDefaults.standard.string(forKey: postProcessingModelStorageKey) ?? Self.defaultPostProcessingModel
-        let postProcessingFallbackModel = UserDefaults.standard.string(forKey: postProcessingFallbackModelStorageKey) ?? Self.defaultPostProcessingFallbackModel
-        let contextModel = Self.loadStoredContextModel(key: contextModelStorageKey)
         let shortcuts = Self.loadShortcutConfiguration(
             holdKey: holdShortcutStorageKey,
             toggleKey: toggleShortcutStorageKey,
@@ -697,10 +634,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let customSystemPromptLastModified = UserDefaults.standard.string(forKey: customSystemPromptLastModifiedStorageKey) ?? ""
         let customContextPromptLastModified = UserDefaults.standard.string(forKey: customContextPromptLastModifiedStorageKey) ?? ""
         let outputLanguage = UserDefaults.standard.string(forKey: outputLanguageStorageKey) ?? ""
-        let storedContextScreenshotMaxDimension = UserDefaults.standard.object(forKey: contextScreenshotMaxDimensionStorageKey) != nil
-            ? UserDefaults.standard.integer(forKey: contextScreenshotMaxDimensionStorageKey)
-            : Self.defaultContextScreenshotMaxDimension
-        let contextScreenshotMaxDimension = Self.normalizedContextScreenshotMaxDimension(storedContextScreenshotMaxDimension)
         let shortcutStartDelay = max(0, UserDefaults.standard.double(forKey: shortcutStartDelayStorageKey))
         let isCommandModeEnabled = UserDefaults.standard.object(forKey: commandModeEnabledStorageKey) == nil
             ? false
@@ -766,19 +699,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         let selectedMicrophoneID = UserDefaults.standard.string(forKey: selectedMicrophoneStorageKey) ?? "default"
 
-        self.contextService = Self.makeAppContextService(
-            apiKey: apiKey,
-            baseURL: apiBaseURL,
-            customContextPrompt: customContextPrompt,
-            contextModel: contextModel,
-            contextScreenshotMaxDimension: contextScreenshotMaxDimension
-        )
         self.hasCompletedSetup = hasCompletedSetup
-        self.apiKey = apiKey
-        self.apiBaseURL = apiBaseURL
-        self.postProcessingModel = postProcessingModel
-        self.postProcessingFallbackModel = postProcessingFallbackModel
-        self.contextModel = contextModel
         self.holdShortcut = shortcuts.hold
         self.toggleShortcut = shortcuts.toggle
         self.copyAgainShortcut = shortcuts.copyAgain
@@ -795,7 +716,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.customSystemPrompt = customSystemPrompt
         self.customContextPrompt = customContextPrompt
         self.instructionExecutionGuardEnabled = instructionExecutionGuardEnabled
-        self.contextScreenshotMaxDimension = contextScreenshotMaxDimension
         self.customSystemPromptLastModified = customSystemPromptLastModified
         self.customContextPromptLastModified = customContextPromptLastModified
         self.outputLanguage = outputLanguage
@@ -890,24 +810,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         audioDeviceObservers.removeAll()
     }
 
-    private static func loadStoredAPIKey(account: String) -> String {
-        if let storedKey = AppSettingsStorage.load(account: account), !storedKey.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return storedKey
-        }
-        return ""
-    }
-
-    private func persistAPIKey(_ value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            AppSettingsStorage.delete(account: apiKeyStorageKey)
-        } else {
-            AppSettingsStorage.save(trimmed, account: apiKeyStorageKey)
-        }
-    }
-
-    static let defaultAPIBaseURL = "https://api.groq.com/openai/v1"
-
     private struct StoredShortcutConfiguration {
         let hold: ShortcutBinding
         let toggle: ShortcutBinding
@@ -926,27 +828,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let binding: ShortcutBinding?
         let hadStoredValue: Bool
         let didNormalize: Bool
-    }
-
-    private static func loadStoredAPIBaseURL(account: String) -> String {
-        if let stored = AppSettingsStorage.load(account: account), !stored.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            return stored
-        }
-        return defaultAPIBaseURL
-    }
-
-    private static func loadStoredContextModel(key: String) -> String {
-        guard let stored = UserDefaults.standard.string(forKey: key) else {
-            return defaultContextModel
-        }
-
-        let trimmed = stored.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed == deprecatedDefaultContextModel {
-            UserDefaults.standard.set(defaultContextModel, forKey: key)
-            return defaultContextModel
-        }
-
-        return trimmed.isEmpty ? defaultContextModel : trimmed
     }
 
     private static func loadShortcutConfiguration(
@@ -1000,68 +881,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             binding: fallback,
             didUpdateStoredValue: stored.hadStoredValue || fallback != nil
         )
-    }
-
-    static func normalizedContextScreenshotMaxDimension(_ value: Int) -> Int {
-        contextScreenshotDimensionOptions.contains(value)
-            ? value
-            : defaultContextScreenshotMaxDimension
-    }
-
-    static func makeAppContextService(
-        apiKey: String,
-        baseURL: String,
-        customContextPrompt: String,
-        contextModel: String,
-        contextScreenshotMaxDimension: Int
-    ) -> AppContextService {
-        AppContextService(
-            // Megaphone 1.1.1 is local-only. Ignore credentials retained from
-            // older FreeFlow/Megaphone installs so an upgrade can never
-            // silently reactivate screenshot or cloud context inference.
-            apiKey: "",
-            baseURL: baseURL,
-            customContextPrompt: customContextPrompt,
-            contextModel: contextModel,
-            screenshotMaxDimension: CGFloat(normalizedContextScreenshotMaxDimension(contextScreenshotMaxDimension))
-        )
-    }
-
-    func makeAppContextService() -> AppContextService {
-        Self.makeAppContextService(
-            apiKey: apiKey,
-            baseURL: apiBaseURL,
-            customContextPrompt: customContextPrompt,
-            contextModel: contextModel,
-            contextScreenshotMaxDimension: contextScreenshotMaxDimension
-        )
-    }
-
-    private func rebuildContextService() {
-        contextService = makeAppContextService()
-    }
-
-    private func persistAPIBaseURL(_ value: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty || trimmed == Self.defaultAPIBaseURL {
-            AppSettingsStorage.delete(account: apiBaseURLStorageKey)
-        } else {
-            AppSettingsStorage.save(trimmed, account: apiBaseURLStorageKey)
-        }
-    }
-
-    private func persistOptionalAPIValue(_ value: String, account: String) {
-        let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed.isEmpty {
-            AppSettingsStorage.delete(account: account)
-        } else {
-            AppSettingsStorage.save(trimmed, account: account)
-        }
-    }
-
-    private static func loadOptionalStoredAPIValue(account: String) -> String {
-        let stored = AppSettingsStorage.load(account: account) ?? ""
-        return stored.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
     /// Keeps the stored language preference tidy. Values are validated
@@ -1220,12 +1039,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: nil,
             windowTitle: nil,
             selectedText: nil,
-            currentActivity: item.contextSummary,
-            contextSystemPrompt: item.contextSystemPrompt,
-            contextPrompt: item.contextPrompt,
-            screenshotDataURL: item.contextScreenshotDataURL,
-            screenshotMimeType: item.contextScreenshotDataURL != nil ? "image/jpeg" : nil,
-            screenshotError: nil
+            currentActivity: item.contextSummary
         )
 
         let capturedCustomVocabulary = dictionaryVocabulary
@@ -2050,35 +1864,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
             manualCommandRequested: manualCommandRequested
         ) else { return false }
 
-        if resolvedIntent.isCommandMode {
-            guard ensureScreenCaptureAccess() else { return false }
-            if let startedAt {
-                os_log(.info, log: recordingLog, "screen capture check passed: %.3fms", (CFAbsoluteTimeGetCurrent() - startedAt) * 1000)
-            }
-        } else {
-            hasScreenRecordingPermission = hasScreenCapturePermission()
-        }
+        hasScreenRecordingPermission = hasScreenCapturePermission()
 
         currentSessionIntent = resolvedIntent
         overlayManager.setRecordingTriggerMode(triggerMode, animated: false)
-        return true
-    }
-
-    private func ensureScreenCaptureAccess() -> Bool {
-        let granted = hasScreenCapturePermission()
-        hasScreenRecordingPermission = granted
-        guard granted else {
-            let message = "Screen recording permission not granted. Enable in System Settings > Privacy & Security > Screen Recording."
-            errorMessage = message
-            statusText = "Screenshot Required"
-            activeRecordingTriggerMode = nil
-            currentSessionIntent = .dictation
-            shortcutSessionController.reset()
-            playErrorSound()
-            showScreenshotPermissionAlert(message: message)
-            return false
-        }
-
         return true
     }
 
@@ -2214,7 +2003,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         isRecording = true
         statusText = "Starting..."
-        hasShownScreenshotPermissionAlert = false
 
         // Show initializing dots only if engine takes longer than 0.2s to start
         var overlayShown = false
@@ -2884,14 +2672,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     await MainActor.run {
                         guard self.isTranscribing else { return }
                         self.lastContextSummary = appContext.contextSummary
-                        self.lastContextScreenshotDataURL = appContext.screenshotDataURL
-                        self.lastContextScreenshotStatus = appContext.screenshotError
-                            ?? "available (\(appContext.screenshotMimeType ?? "image"))"
+                        self.lastContextScreenshotDataURL = nil
+                        self.lastContextScreenshotStatus = "Not captured (local-only)"
                         self.lastContextAppName = appContext.appName ?? ""
                         self.lastContextBundleIdentifier = appContext.bundleIdentifier ?? ""
                         self.lastContextWindowTitle = appContext.windowTitle ?? ""
                         self.lastContextSelectedText = appContext.selectedText ?? ""
-                        self.lastContextLLMPrompt = appContext.contextPrompt ?? ""
+                        self.lastContextLLMPrompt = ""
                         let trimmedRawTranscript = parsedTranscript.transcript
                         let trimmedFinalTranscript = result.finalTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
                         let processingStatus = Self.statusMessage(
@@ -3012,9 +2799,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         self.lastContextSummary = ""
                         self.lastPostProcessingStatus = "Error: \(error.localizedDescription)"
                         self.lastPostProcessingPrompt = ""
-                        self.lastContextScreenshotDataURL = resolvedContext.screenshotDataURL
-                        self.lastContextScreenshotStatus = resolvedContext.screenshotError
-                            ?? "available (\(resolvedContext.screenshotMimeType ?? "image"))"
+                        self.lastContextScreenshotDataURL = nil
+                        self.lastContextScreenshotStatus = "Not captured (local-only)"
                         self.recordPipelineHistoryEntry(
                             rawTranscript: "",
                             postProcessedTranscript: "",
@@ -3035,7 +2821,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
     static func resolvedSystemPrompt(_ customSystemPrompt: String) -> String {
         customSystemPrompt.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            ? PostProcessingService.defaultSystemPrompt
+            ? AppleFoundationModelsPostProcessor.dictationInstructions
             : customSystemPrompt
     }
 
@@ -3059,11 +2845,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
             postProcessingPrompt: postProcessingPrompt,
             systemPrompt: systemPrompt,
             contextSummary: context.contextSummary,
-            contextSystemPrompt: context.contextSystemPrompt,
-            contextPrompt: context.contextPrompt,
-            contextScreenshotDataURL: context.screenshotDataURL,
-            contextScreenshotStatus: context.screenshotError
-                ?? "available (\(context.screenshotMimeType ?? "image"))",
+            contextSystemPrompt: nil,
+            contextPrompt: nil,
+            contextScreenshotDataURL: nil,
+            contextScreenshotStatus: "Not captured (local-only)",
             postProcessingStatus: processingStatus,
             debugStatus: debugStatusMessage,
             customVocabulary: dictionaryVocabulary,
@@ -3116,7 +2901,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         lastContextSummary = "Collecting app context..."
         lastPostProcessingStatus = ""
         lastContextScreenshotDataURL = nil
-        lastContextScreenshotStatus = "Collecting screenshot..."
+        lastContextScreenshotStatus = "Not captured (local-only)"
 
         contextCaptureTask = Task { [weak self] in
             guard let self else { return nil }
@@ -3124,16 +2909,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
             await MainActor.run {
                 self.capturedContext = context
                 self.lastContextSummary = context.contextSummary
-                self.lastContextScreenshotDataURL = context.screenshotDataURL
-                self.lastContextScreenshotStatus = context.screenshotError
-                    ?? "available (\(context.screenshotMimeType ?? "image"))"
+                self.lastContextScreenshotDataURL = nil
+                self.lastContextScreenshotStatus = "Not captured (local-only)"
                 self.lastContextAppName = context.appName ?? ""
                 self.lastContextBundleIdentifier = context.bundleIdentifier ?? ""
                 self.lastContextWindowTitle = context.windowTitle ?? ""
                 self.lastContextSelectedText = context.selectedText ?? ""
-                self.lastContextLLMPrompt = context.contextPrompt ?? ""
+                self.lastContextLLMPrompt = ""
                 self.lastPostProcessingStatus = "App context captured"
-                self.handleScreenshotCaptureIssue(context.screenshotError)
             }
             return context
         }
@@ -3147,18 +2930,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: frontmostApp?.bundleIdentifier,
             windowTitle: windowTitle,
             selectedText: nil,
-            currentActivity: "Could not refresh app context at stop time; using text-only post-processing.",
-            contextSystemPrompt: resolvedContextSystemPrompt(),
-            contextPrompt: nil,
-            screenshotDataURL: nil,
-            screenshotMimeType: nil,
-            screenshotError: "No app context captured before stop"
+            currentActivity: "Could not refresh app context at stop time; using text-only post-processing."
         )
-    }
-
-    private func resolvedContextSystemPrompt() -> String {
-        let trimmedPrompt = customContextPrompt.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmedPrompt.isEmpty ? AppContextService.defaultContextPrompt : trimmedPrompt
     }
 
     private func focusedWindowTitle(for app: NSRunningApplication?) -> String? {
@@ -3202,73 +2975,6 @@ final class AppState: ObservableObject, @unchecked Sendable {
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "\n", with: " ")
         return trimmed.isEmpty ? nil : trimmed
-    }
-
-    private func handleScreenshotCaptureIssue(_ message: String?) {
-        guard let message, !message.isEmpty else {
-            hasShownScreenshotPermissionAlert = false
-            return
-        }
-
-        os_log(.error, "Screenshot capture issue: %{public}@", message)
-
-        if isScreenCapturePermissionError(message) && !hasShownScreenshotPermissionAlert {
-            hasScreenRecordingPermission = false
-            guard currentSessionIntent.isCommandMode else { return }
-            errorMessage = message
-            hasShownScreenshotPermissionAlert = true
-
-            // Permission errors are fatal — stop recording
-            tearDownNativeStreamingSession()
-            audioRecorder.cancelRecording()
-            audioLevelCancellable?.cancel()
-            audioLevelCancellable = nil
-            contextCaptureTask?.cancel()
-            contextCaptureTask = nil
-            capturedContext = nil
-            isRecording = false
-            restoreAudioInterruptionIfNeeded()
-            shortcutSessionController.reset()
-            activeRecordingTriggerMode = nil
-            endCriticalDictationActivity()
-            statusText = "Screenshot Required"
-            overlayManager.dismiss()
-
-            playErrorSound()
-            showScreenshotPermissionAlert(message: message)
-        }
-        // Non-permission errors (transient failures) — continue recording without context
-    }
-
-    private func isScreenCapturePermissionError(_ message: String) -> Bool {
-        let lowered = message.lowercased()
-        return lowered.contains("screen recording permission not granted")
-            || lowered.contains("requires screen recording permission")
-    }
-
-    private func showScreenshotPermissionAlert(message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Screen Recording Permission Required"
-        alert.informativeText = "\(message)\n\n\(AppName.displayName) requires Screen Recording permission to capture screenshots for context-aware transcription.\n\nGo to System Settings > Privacy & Security > Screen Recording and enable \(AppName.displayName)."
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: "Open System Settings")
-        alert.addButton(withTitle: "Dismiss")
-        alert.icon = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
-
-        let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
-            openScreenCaptureSettings()
-        }
-    }
-
-    private func showScreenshotCaptureErrorAlert(message: String) {
-        let alert = NSAlert()
-        alert.messageText = "Screenshot Capture Failed"
-        alert.informativeText = "\(message)\n\nA screenshot is required for context-aware transcription. Recording has been stopped."
-        alert.alertStyle = .critical
-        alert.addButton(withTitle: "Dismiss")
-        alert.icon = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: nil)
-        _ = alert.runModal()
     }
 
     func toggleDebugOverlay() {
