@@ -113,6 +113,22 @@ struct AppContextServiceTests {
             AppWritingContext.classify(appName: "Safari", bundleIdentifier: "com.apple.Safari", windowTitle: "Discord | #general") == .casualChat,
             "Discord in a browser should use casual-chat writing context"
         )
+        expect(
+            AppWritingContext.classify(appName: "WhatsApp", bundleIdentifier: "net.whatsapp.WhatsApp", windowTitle: nil) == .casualChat,
+            "WhatsApp should use casual-chat writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Telegram", bundleIdentifier: "ru.keepcoder.Telegram", windowTitle: nil) == .casualChat,
+            "Telegram should use casual-chat writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Google Chrome", bundleIdentifier: "com.google.Chrome", windowTitle: "Inbox (42) - kuber@gmail.com - Gmail") == .email,
+            "Gmail in a browser should use email writing context"
+        )
+        expect(
+            AppWritingContext.classify(appName: "Google Chrome", bundleIdentifier: "com.google.Chrome", windowTitle: "kuber@gmail.com - Google Account") == .neutral,
+            "A Gmail address alone should not read as email writing context"
+        )
     }
 
     private static func testCleanupPromptUsesLocalAppStyle() {
