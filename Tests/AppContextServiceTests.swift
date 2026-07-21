@@ -11,9 +11,15 @@ struct AppContextServiceTests {
         testAppWritingContextClassification()
         testMarkdownSurfaceDetection()
         testCleanupPromptUsesLocalAppStyle()
+        testCleanupPromptIncludesTextBeforeCaret()
+        testCaretContextCaseHarmonization()
+        testCaretContextRepetitionStripping()
         testSelectionPromptUsesDestinationContext()
         testTransformInstructionsAndPrompt()
         testTransformSourceTextEchoIsRemoved()
+        testWritingFormalityGuidance()
+        testWritingFormalityPromptPlumbing()
+        testWritingFormalityStorageRoundTrip()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
@@ -214,6 +220,181 @@ struct AppContextServiceTests {
         expect(prompt.contains("do not make the message more formal unless asked"), "Cleanup should preserve tone")
     }
 
+    private static func testCleanupPromptIncludesTextBeforeCaret() {
+        func request(textBeforeCaret: String?) -> SmartCleanupRequest {
+            SmartCleanupRequest(
+                transcript: "definitely ship it tomorrow",
+                appName: "Notes",
+                bundleIdentifier: "com.apple.Notes",
+                windowTitle: "Ideas",
+                selectedText: nil,
+                textBeforeCaret: textBeforeCaret,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: ""
+            )
+        }
+        let hintMarker = "Text immediately before the cursor"
+
+        let withCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "I think we should")
+        )
+        expect(withCaretContext.contains(hintMarker), "Caret context hint missing")
+        expect(withCaretContext.contains("\"I think we should\""), "Caret context text missing from hint")
+        expect(withCaretContext.contains("start lowercase"), "Mid-sentence caret context must direct a lowercase continuation")
+
+        let afterSentence = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "Let me check the logs.")
+        )
+        expect(afterSentence.contains("capitalize its first word"), "Sentence-ending caret context must direct a fresh sentence")
+
+        let multiline = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "Meeting notes:\nI think we should")
+        )
+        expect(multiline.contains("\"Meeting notes: I think we should\""), "Caret context must be flattened to one line")
+
+        expect(
+            AppleFoundationModelsPostProcessor.caretContinuesSentence("I think we should"),
+            "Mid-sentence text must continue the sentence"
+        )
+        expect(
+            AppleFoundationModelsPostProcessor.caretContinuesSentence("We talked it over and,"),
+            "A trailing comma must continue the sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Let me check the logs."),
+            "A trailing period must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Really?!"),
+            "Trailing sentence punctuation must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("He said \u{201C}done.\u{201D}"),
+            "A period inside closing quotes must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Shopping list\n"),
+            "A trailing newline must start a fresh sentence"
+        )
+
+        let withoutCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: nil)
+        )
+        expect(!withoutCaretContext.contains(hintMarker), "Caret context hint must be omitted when nil")
+
+        let withBlankCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "  \n ")
+        )
+        expect(!withBlankCaretContext.contains(hintMarker), "Caret context hint must be omitted when blank")
+
+        // Existing call sites that never pass textBeforeCaret keep compiling
+        // and produce no caret hint.
+        let defaulted = AppleFoundationModelsPostProcessor.cleanupPrompt(for: SmartCleanupRequest(
+            transcript: "definitely ship it tomorrow",
+            appName: "Notes",
+            bundleIdentifier: "com.apple.Notes",
+            windowTitle: "Ideas",
+            selectedText: nil,
+            contextSummary: "",
+            vocabulary: [],
+            corrections: [],
+            outputLanguage: "",
+            customInstructions: ""
+        ))
+        expect(!defaulted.contains(hintMarker), "Defaulted textBeforeCaret must omit the caret hint")
+    }
+
+    private static func testCaretContextCaseHarmonization() {
+        func harmonized(_ text: String, transcript: String, before: String?) -> String {
+            AppleFoundationModelsPostProcessor.harmonizeCaseWithCaretContext(text, request: SmartCleanupRequest(
+                transcript: transcript,
+                appName: nil,
+                bundleIdentifier: nil,
+                windowTitle: nil,
+                selectedText: nil,
+                textBeforeCaret: before,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: ""
+            ))
+        }
+
+        expectEqual(
+            harmonized("Definitely ship it", transcript: "um definitely ship it", before: "I think we should"),
+            "definitely ship it"
+        )
+        expectEqual(
+            harmonized("Ian should go", transcript: "Ian should go", before: "I think"),
+            "Ian should go"
+        )
+        expectEqual(
+            harmonized("I should go", transcript: "I should go", before: "maybe"),
+            "I should go"
+        )
+        expectEqual(
+            harmonized("we might need to roll back", transcript: "we might need to roll back", before: "Let me check the logs."),
+            "We might need to roll back"
+        )
+        expectEqual(
+            harmonized("iPhone sales dropped", transcript: "iPhone sales dropped", before: "Let me check the logs."),
+            "iPhone sales dropped"
+        )
+        expectEqual(
+            harmonized("Definitely ship it", transcript: "definitely ship it", before: nil),
+            "Definitely ship it"
+        )
+    }
+
+    private static func testCaretContextRepetitionStripping() {
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could probably try the beta first thing.",
+                before: "I guess the team could"
+            ),
+            "probably try the beta first thing."
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I think we should ship",
+                before: "Yesterday we agreed that I think we should"
+            ),
+            "ship"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could, probably try the beta",
+                before: "I guess the team could"
+            ),
+            "probably try the beta"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "should we reconsider",
+                before: "I think we should"
+            ),
+            "should we reconsider"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "hi everyone",
+                before: "Hi"
+            ),
+            "hi everyone"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could",
+                before: "I guess the team could"
+            ),
+            "I guess the team could"
+        )
+    }
+
     private static func testSelectionPromptUsesDestinationContext() {
         let prompt = AppleFoundationModelsPostProcessor.selectionPrompt(
             selectedText: "can we ship this tomorrow",
@@ -228,6 +409,128 @@ struct AppContextServiceTests {
         expect(prompt.contains("Window: Draft — Launch"), "Edit prompt lost window context")
         expect(prompt.contains("Writing context: email"), "Edit prompt lost email style")
         expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Edit prompt lost email safety")
+    }
+
+    private static let casualSentence = "The speaker prefers a relaxed register: contractions are welcome and punctuation stays light."
+    private static let formalSentence = "The speaker prefers a polished register: full sentences, professional punctuation, and spoken shorthand written out — “gonna” becomes “going to”, “wanna” becomes “want to”."
+
+    private static func testWritingFormalityGuidance() {
+        let dialContexts: [AppWritingContext] = [.email, .workChat, .casualChat, .document, .neutral]
+        for context in dialContexts {
+            expectEqual(
+                context.cleanupGuidance(markdown: false, formality: .balanced),
+                context.cleanupGuidance(markdown: false)
+            )
+            expect(
+                !context.cleanupGuidance(markdown: false).contains("register"),
+                "Balanced must add nothing for \(context)"
+            )
+            expect(
+                context.cleanupGuidance(markdown: false, formality: .casual).hasSuffix(casualSentence),
+                "Casual preference missing for \(context)"
+            )
+            expect(
+                context.cleanupGuidance(markdown: false, formality: .formal).hasSuffix(formalSentence),
+                "Formal preference missing for \(context)"
+            )
+            expect(
+                context.commandGuidance(markdown: false, formality: .formal).contains(formalSentence),
+                "Command guidance lost formal preference for \(context)"
+            )
+        }
+
+        // Markdown guidance and the formality preference must coexist.
+        let markdownFormal = AppWritingContext.document.cleanupGuidance(markdown: true, formality: .formal)
+        expect(markdownFormal.contains("Markdown renders here"), "Markdown guidance lost with formality set")
+        expect(markdownFormal.hasSuffix(formalSentence), "Formal preference lost on markdown surface")
+
+        // Code and terminal are always technical, whatever the dial says.
+        for formality in WritingFormality.allCases {
+            expectEqual(
+                AppWritingContext.codeOrTerminal.cleanupGuidance(markdown: false, formality: formality),
+                AppWritingContext.codeOrTerminal.cleanupGuidance(markdown: false)
+            )
+        }
+    }
+
+    private static func testWritingFormalityPromptPlumbing() {
+        func request(_ formality: WritingFormality) -> SmartCleanupRequest {
+            SmartCleanupRequest(
+                transcript: "hey uh can you send me the report by friday thanks",
+                appName: "Mail",
+                bundleIdentifier: "com.apple.mail",
+                windowTitle: "Draft",
+                selectedText: nil,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: "",
+                formality: formality
+            )
+        }
+        expect(
+            AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.formal)).contains(formalSentence),
+            "Cleanup prompt lost the formal dial"
+        )
+        expect(
+            AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.casual)).contains(casualSentence),
+            "Cleanup prompt lost the casual dial"
+        )
+        let balancedPrompt = AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.balanced))
+        expect(
+            !balancedPrompt.contains(formalSentence) && !balancedPrompt.contains(casualSentence),
+            "Balanced cleanup prompt must match current behavior"
+        )
+
+        let commandPrompt = AppleFoundationModelsPostProcessor.commandPrompt(
+            command: "reply saying thanks",
+            appName: "Slack",
+            bundleIdentifier: "com.tinyspeck.slackmacgap",
+            windowTitle: "Megaphone | project",
+            contextSummary: "",
+            selectedText: nil,
+            previousText: nil,
+            vocabulary: [],
+            formality: .formal
+        )
+        expect(commandPrompt.contains(formalSentence), "Command prompt lost the formal dial")
+
+        let selectionPrompt = AppleFoundationModelsPostProcessor.selectionPrompt(
+            selectedText: "can we ship this tomorrow",
+            command: "fix the punctuation",
+            appName: "Discord",
+            bundleIdentifier: "com.hnc.Discord",
+            windowTitle: nil,
+            vocabulary: [],
+            formality: .casual
+        )
+        expect(selectionPrompt.contains(casualSentence), "Selection prompt lost the casual dial")
+    }
+
+    private static func testWritingFormalityStorageRoundTrip() {
+        for formality in WritingFormality.allCases {
+            expect(
+                WritingFormality(rawValue: formality.rawValue) == formality,
+                "Raw-value round trip failed for \(formality)"
+            )
+        }
+        // Unknown or missing stored values fall back to balanced, the way
+        // AppState resolves the per-context dictionary.
+        expect(
+            WritingFormality(rawValue: "loud") == nil,
+            "Unknown stored value must be rejected so the caller defaults to balanced"
+        )
+        let stored = ["email": "formal", "casualChat": "casual"]
+        let decoded = AppWritingContext.email.rawValue
+        expect(
+            WritingFormality(rawValue: stored[decoded] ?? "") == .formal,
+            "Stored dictionary lookup by context raw value failed"
+        )
+        expect(
+            WritingFormality(rawValue: stored[AppWritingContext.neutral.rawValue] ?? "") == nil,
+            "Missing context entry must resolve to no explicit formality"
+        )
     }
 
     private static func testWakeCommandResponseWrappersAreRemoved() {
