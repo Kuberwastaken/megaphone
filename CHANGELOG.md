@@ -10,6 +10,22 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.7] - 2026-07-21
+
+### Added
+
+- Transforms: say “Hey Megaphone, polish that” to tighten your last dictation, or “prompt that” to restructure it as a clear AI prompt — plus your own named rewrite templates, managed next to Voice Macros. Entirely on-device.
+- “Scratch that” (or “delete that”) spoken as a whole utterance deletes the dictation you just made, safely: nothing is deleted if the cursor moved. Toggleable in Settings.
+- Revert Last Cleanup in the menu bar restores exactly what you said when the smart cleanup over-edited, replacing the cleaned text in place.
+- Mouse-button push-to-talk (off by default): bind the middle or a side mouse button as a hold-to-talk trigger. The bound click never reaches the app under the cursor.
+- A per-app Writing Style dial — Casual, Balanced, or Formal for Email, Work chat, Personal chat, Documents, and everything else. Balanced keeps today's behavior exactly; the dial adjusts register, never meaning.
+- Dictionary entries can be starred and are ranked by real usage, so the terms you actually rely on always reach the model.
+- The cancel key is now rebindable (Escape remains the default).
+
+### Improved
+
+- Dictating mid-sentence now continues the surrounding text naturally: lowercase continuations after an unfinished clause, a fresh capitalized sentence after a period, and never a repeat of words already on screen.
+
 ## [1.1.6] - 2026-07-21
 
 ### Added
