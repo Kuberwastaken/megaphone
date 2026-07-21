@@ -10,6 +10,11 @@ enum DictionaryStoreTests {
         testPersistence()
         testConservativeCandidateExtraction()
         testDismissedSuggestionStaysDismissed()
+        testDecodesEntriesStoredBeforeRanking()
+        testPromptRankingOrder()
+        testUsageMatchingRespectsWordBoundaries()
+        testUsageIncrementsOnlyEnabledEntries()
+        testStarAndUsagePersist()
     }
 
     private static func testManualTermsAndProjection() {
@@ -124,6 +129,89 @@ enum DictionaryStoreTests {
         let restored = try! store.addManual("Kuber")
         expectEqual(restored.status, .active)
         expectEqual(restored.source, .manual)
+    }
+
+    private static func testDecodesEntriesStoredBeforeRanking() {
+        let suite = "DictionaryStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        // A stored blob from before `starred`/`usageCount` existed.
+        let legacyBlob = """
+        [{"id":"1B8F4E2A-6C1D-4E5B-9A3F-2D7C8E0B4A61","term":"Megaphone","source":"manual",\
+        "status":"active","isEnabled":true,"observationCount":0,"createdAt":776000000,"updatedAt":776000000}]
+        """
+        defaults.set(Data(legacyBlob.utf8), forKey: "entries")
+        defaults.set(true, forKey: "migrated")
+        let store = DictionaryStore(
+            defaults: defaults,
+            storageKey: "entries",
+            migrationKey: "migrated",
+            legacyVocabularyKey: "legacy"
+        )
+        expectEqual(store.entries.count, 1)
+        expectEqual(store.entries.first?.term, "Megaphone")
+        expectEqual(store.entries.first?.starred, false)
+        expectEqual(store.entries.first?.usageCount, 0)
+        expectEqual(store.activeTerms, ["Megaphone"])
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    private static func testPromptRankingOrder() {
+        let (store, defaults) = makeStore()
+        defer { clear(defaults) }
+
+        _ = try! store.addManual("Obsidian")
+        _ = try! store.addManual("Kuber")
+        let starredEntry = try! store.addManual("Zig")
+        _ = try! store.addManual("Apple")
+        store.setStarred(true, for: starredEntry.id)
+        store.recordUsage(in: "Ship the Kuber build")
+        store.recordUsage(in: "Ping Kuber about Obsidian")
+
+        // Starred beats usage, usage beats alphabetical, alphabetical breaks ties.
+        expectEqual(store.activeTerms, ["Zig", "Kuber", "Obsidian", "Apple"])
+    }
+
+    private static func testUsageMatchingRespectsWordBoundaries() {
+        let (store, defaults) = makeStore()
+        defer { clear(defaults) }
+
+        _ = try! store.addManual("AI")
+        store.recordUsage(in: "We maintain the daily chain")
+        expectEqual(store.entries.first?.usageCount, 0)
+        store.recordUsage(in: "The AI pipeline, obviously.")
+        expectEqual(store.entries.first?.usageCount, 1)
+        // Punctuation is a boundary; repeats within one dictation count once.
+        store.recordUsage(in: "ai, ai everywhere")
+        expectEqual(store.entries.first?.usageCount, 2)
+        expect(DictionaryStore.containsWholeWord("Foundation Models", in: "use Foundation Models."), "Missed a multi-word phrase")
+        expect(!DictionaryStore.containsWholeWord("Foundation Models", in: "foundation modelscope"), "Matched inside a longer word")
+    }
+
+    private static func testUsageIncrementsOnlyEnabledEntries() {
+        let (store, defaults) = makeStore()
+        defer { clear(defaults) }
+
+        _ = try! store.addManual("SpeechAnalyzer")
+        let disabled = try! store.addManual("Obsidian")
+        store.setEnabled(false, for: disabled.id)
+        store.observe(candidateTerms: ["Claurst"]) // suggested, not active
+        store.recordUsage(in: "SpeechAnalyzer feeds Obsidian and Claurst")
+        expectEqual(store.entries.first { $0.term == "SpeechAnalyzer" }?.usageCount, 1)
+        expectEqual(store.entries.first { $0.term == "Obsidian" }?.usageCount, 0)
+        expectEqual(store.entries.first { $0.term == "Claurst" }?.usageCount, 0)
+    }
+
+    private static func testStarAndUsagePersist() {
+        let suite = "DictionaryStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = DictionaryStore(defaults: defaults, storageKey: "entries", migrationKey: "migrated")
+        let entry = try! store.addManual("Megaphone")
+        store.setStarred(true, for: entry.id)
+        store.recordUsage(in: "Megaphone shipped")
+        let reloaded = DictionaryStore(defaults: defaults, storageKey: "entries", migrationKey: "migrated")
+        expectEqual(reloaded.entries.first?.starred, true)
+        expectEqual(reloaded.entries.first?.usageCount, 1)
+        defaults.removePersistentDomain(forName: suite)
     }
 
     private static func makeStore() -> (DictionaryStore, UserDefaults) {

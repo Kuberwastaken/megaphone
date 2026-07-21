@@ -251,6 +251,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let commandModeStyleStorageKey = "command_mode_style"
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
     private let outputLanguageStorageKey = "output_language"
+    private let writingFormalityByContextStorageKey = "writing_formality_by_context"
     private let dictationAudioInterruptionEnabledStorageKey = "dictation_audio_interruption_enabled"
     private let pasteAfterShortcutReleaseDelay: TimeInterval = 0.03
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
@@ -421,6 +422,25 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             UserDefaults.standard.set(outputLanguage, forKey: outputLanguageStorageKey)
         }
+    }
+
+    /// Writing-style dial per writing-context bucket, keyed by
+    /// `AppWritingContext.rawValue` with `WritingFormality.rawValue` values.
+    /// Missing entries mean `.balanced` (the current behavior). Code and
+    /// terminal apps are exempt and never consult this.
+    @Published var writingFormalityByContext: [String: String] {
+        didSet {
+            UserDefaults.standard.set(writingFormalityByContext, forKey: writingFormalityByContextStorageKey)
+        }
+    }
+
+    func writingFormality(for context: AppWritingContext) -> WritingFormality {
+        guard context != .codeOrTerminal else { return .balanced }
+        return WritingFormality(rawValue: writingFormalityByContext[context.rawValue] ?? "") ?? .balanced
+    }
+
+    func setWritingFormality(_ formality: WritingFormality, for context: AppWritingContext) {
+        writingFormalityByContext[context.rawValue] = formality.rawValue
     }
 
     @Published var shortcutStartDelay: TimeInterval {
@@ -634,6 +654,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let customSystemPromptLastModified = UserDefaults.standard.string(forKey: customSystemPromptLastModifiedStorageKey) ?? ""
         let customContextPromptLastModified = UserDefaults.standard.string(forKey: customContextPromptLastModifiedStorageKey) ?? ""
         let outputLanguage = UserDefaults.standard.string(forKey: outputLanguageStorageKey) ?? ""
+        let writingFormalityByContext = UserDefaults.standard
+            .dictionary(forKey: writingFormalityByContextStorageKey) as? [String: String] ?? [:]
         let shortcutStartDelay = max(0, UserDefaults.standard.double(forKey: shortcutStartDelayStorageKey))
         let isCommandModeEnabled = UserDefaults.standard.object(forKey: commandModeEnabledStorageKey) == nil
             ? false
@@ -719,6 +741,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.customSystemPromptLastModified = customSystemPromptLastModified
         self.customContextPromptLastModified = customContextPromptLastModified
         self.outputLanguage = outputLanguage
+        self.writingFormalityByContext = writingFormalityByContext
         self.shortcutStartDelay = shortcutStartDelay
         self.preserveClipboard = preserveClipboard
         self.preserveExactWording = smartCleanupMode == .exact
@@ -2396,6 +2419,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let corrections = TranscriptTidier.CorrectionMapping.parse(wordCorrections)
+        // The user's standing writing-style dial for wherever this dictation
+        // lands, resolved from the context captured at recording time.
+        let formality = writingFormality(for: AppWritingContext.classify(
+            appName: context.appName,
+            bundleIdentifier: context.bundleIdentifier,
+            windowTitle: context.windowTitle
+        ))
 
         if wakeCommandsEnabled, case .dictation = intent, let wake = WakePhraseMatcher.detect(
             in: trimmedRawTranscript,
@@ -2424,6 +2454,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     previousText: previousText,
                     screenText: screenText,
                     vocabulary: vocabulary,
+                    formality: formality,
                     timeout: 5
                 )
                 return (
@@ -2452,6 +2483,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     bundleIdentifier: context.bundleIdentifier,
                     windowTitle: context.windowTitle,
                     vocabulary: vocabulary,
+                    formality: formality,
                     sessionID: smartSessionID,
                     timeout: 4
                 )
@@ -2493,7 +2525,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 outputLanguage: outputLanguage,
                 customInstructions: [customSystemPrompt, customContextPrompt]
                     .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .joined(separator: "\n")
+                    .joined(separator: "\n"),
+                formality: formality
             )
             let result = try await AppleFoundationModelsPostProcessor.shared.cleanup(
                 request,
@@ -2699,6 +2732,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
                                 )
                             default:
                                 break
+                            }
+                            if !trimmedFinalTranscript.isEmpty {
+                                DictionaryStore.shared.recordUsage(in: trimmedFinalTranscript)
                             }
                         }
                         self.recordPipelineHistoryEntry(

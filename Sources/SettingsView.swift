@@ -442,6 +442,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Cleanup", icon: "sparkles") {
                     cleanupSection
                 }
+                SettingsCard("Writing Style", icon: "textformat") {
+                    writingStyleSection
+                }
                 SettingsCard("Output Language", icon: "globe") {
                     outputLanguageSection
                 }
@@ -749,6 +752,41 @@ struct GeneralSettingsView: View {
             return "Instant deterministic cleanup for fillers, stutters, repeated words, and spacing."
         case .exact:
             return "Preserves the words you spoke, with only the minimum formatting needed for insertion."
+        }
+    }
+
+    // MARK: Writing Style
+
+    private var writingStyleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            formalityRow("Email", context: .email)
+            formalityRow("Work chat", context: .workChat)
+            formalityRow("Personal chat", context: .casualChat)
+            formalityRow("Documents", context: .document)
+            formalityRow("Everything else", context: .neutral)
+
+            Text("How Smart Cleanup punctuates and polishes your words in each kind of app. Your wording and meaning are never changed; code and terminal apps always stay technical.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func formalityRow(_ label: String, context: AppWritingContext) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+            Spacer()
+            Picker("", selection: Binding(
+                get: { appState.writingFormality(for: context) },
+                set: { appState.setWritingFormality($0, for: context) }
+            )) {
+                ForEach(WritingFormality.allCases, id: \.self) { formality in
+                    Text(formality.title).tag(formality)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 260)
         }
     }
 
@@ -1210,7 +1248,8 @@ struct DictionarySettingsView: View {
     }
 
     private var savedEntries: [DictionaryEntry] {
-        store.entries.filter { $0.status == .active && matchesSearch($0) }
+        let matches = store.entries.filter { $0.status == .active && matchesSearch($0) }
+        return matches.filter(\.starred) + matches.filter { !$0.starred }
     }
 
     var body: some View {
@@ -1331,6 +1370,10 @@ struct DictionarySettingsView: View {
                         Text("·")
                         Text("Heard \(entry.observationCount) times")
                     }
+                    if !isSuggestion && entry.usageCount > 0 {
+                        Text("·")
+                        Text("Used \(entry.usageCount) time\(entry.usageCount == 1 ? "" : "s")")
+                    }
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1343,6 +1386,12 @@ struct DictionarySettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             } else {
+                Button { store.setStarred(!entry.starred, for: entry.id) } label: {
+                    Image(systemName: entry.starred ? "star.fill" : "star")
+                        .foregroundStyle(entry.starred ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(entry.starred ? "Unstar this word" : "Star this word so it is always prioritized")
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { store.setEnabled($0, for: entry.id) }
