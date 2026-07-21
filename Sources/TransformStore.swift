@@ -25,11 +25,18 @@ struct Transform: Codable, Identifiable, Equatable {
 /// falls through unchanged to the normal wake-command model.
 enum TransformStore {
     static let polishInstruction = """
-    Tighten the grammar and flow of the text. Remove filler words and fix awkward or repeated phrasing. Keep the original meaning, tone, and length. Never add information, opinions, or new sentences.
+    Tighten the grammar and flow of the text. Remove filler words, stutters, and repeated phrasing. Keep the meaning, tone, hedges, and level of confidence exactly — "I think we should um maybe ship it" becomes "I think we should maybe ship it", keeping "I think" and "maybe". Keep roughly the original length and never add information or new sentences. When the text asks for something ("write me an announcement..."), keep it as that request — never produce the thing it asks for.
     """
 
     static let promptInstruction = """
-    Restructure the text into a clear instruction for an AI assistant. First line: the goal as one direct imperative sentence. Then the constraints, conditions, and context from the text as short bullet points starting with "-". Keep every requirement from the text; add nothing new and answer nothing.
+    Rewrite the text as a prompt for an AI assistant, using exactly this layout: a "Goal:" line stating the action from the text as one short imperative sentence, then one "- " bullet for each condition or detail from the text that the Goal line does not already say. When nothing remains, output just the Goal line. Keep every requirement; invent nothing.
+    Example: "so um write a poem about the sea i guess it should rhyme and keep it short" becomes:
+    Goal: Write a poem about the sea.
+    - It should rhyme.
+    - Keep it short.
+    Example: "i think we could try deploying the update tonight you know if the smoke tests look good" becomes:
+    Goal: Deploy the update tonight.
+    - Only if the smoke tests look good.
     """
 
     static let builtIns: [Transform] = [
