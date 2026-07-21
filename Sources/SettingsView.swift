@@ -819,7 +819,13 @@ struct GeneralSettingsView: View {
             )
             .disabled(!appState.wakeCommandsEnabled)
 
-            Text("Inline AI is in alpha. Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question, generate text, or change your previous dictation — try “make that formal.” Megaphone uses the active app and recent text as on-device context, removes the phrase, and pastes the answer. The shorter trigger is optional.")
+            Toggle(
+                "Use on-screen text as context",
+                isOn: $appState.wakeScreenContextEnabled
+            )
+            .disabled(!appState.wakeCommandsEnabled)
+
+            Text("Inline AI is in alpha. Hold your normal dictation shortcut and start with “Hey Megaphone” to ask a question, generate text, or change your previous dictation — try “make that formal.” Megaphone uses the active app and recent text as on-device context, removes the phrase, and pastes the answer. The shorter trigger is optional. With on-screen text enabled, requests like “reply to this email” read the visible window entirely on-device — via accessibility, or a window snapshot when Screen Recording is already granted.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
         }

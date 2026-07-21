@@ -252,6 +252,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let voiceMacrosStorageKey = "voice_macros"
     private let wakeCommandsEnabledStorageKey = "wake_commands_enabled"
     private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
+    private let wakeScreenContextEnabledStorageKey = "wake_screen_context_enabled"
     private let commandModeEnabledStorageKey = "command_mode_enabled"
     private let commandModeStyleStorageKey = "command_mode_style"
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
@@ -571,6 +572,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @Published var wakeScreenContextEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(wakeScreenContextEnabled, forKey: wakeScreenContextEnabledStorageKey)
+        }
+    }
+
     @Published var isRecording = false {
         didSet {
             guard oldValue != isRecording else { return }
@@ -740,6 +747,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let wakeCommandsEnabled = UserDefaults.standard.object(forKey: wakeCommandsEnabledStorageKey) == nil
             ? true
             : UserDefaults.standard.bool(forKey: wakeCommandsEnabledStorageKey)
+        let wakeScreenContextEnabled = UserDefaults.standard.object(forKey: wakeScreenContextEnabledStorageKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: wakeScreenContextEnabledStorageKey)
 
         let initialAccessibility = AXIsProcessTrusted()
         let initialScreenCapturePermission = CGPreflightScreenCaptureAccess()
@@ -802,6 +812,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
         self.wakeCommandsEnabled = wakeCommandsEnabled
+        self.wakeScreenContextEnabled = wakeScreenContextEnabled
         self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
         self.pipelineHistory = savedHistory
         self.hasAccessibility = initialAccessibility
@@ -2605,6 +2616,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
             guard !command.isEmpty else {
                 return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "", nil)
             }
+            // Read the visible window text on-device so requests that point
+            // at on-screen content ("reply to this email") have their source.
+            let screenText: String?
+            if wakeScreenContextEnabled {
+                screenText = await ScreenTextService.shared.visibleText()
+            } else {
+                screenText = nil
+            }
             do {
                 let result = try await AppleFoundationModelsPostProcessor.shared.executeCommand(
                     command,
@@ -2614,6 +2633,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     contextSummary: context.contextSummary,
                     selectedText: context.selectedText,
                     previousText: previousText,
+                    screenText: screenText,
                     vocabulary: vocabulary,
                     timeout: 5
                 )
