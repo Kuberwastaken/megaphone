@@ -1684,6 +1684,94 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Whether "Revert Last Cleanup" can do anything: a dictation landed
+    /// recently enough to still be replaceable and its literal transcript
+    /// actually differs from what the cleanup pasted.
+    @MainActor
+    var canRevertLastDictationToRaw: Bool {
+        guard !isRecording, !isTranscribing else { return false }
+        guard let item = recentDictationHistoryItem(in: nil, now: Date()) else { return false }
+        return RawRevertEligibility.revertTarget(
+            rawTranscript: item.rawTranscript,
+            cleanedTranscript: item.postProcessedTranscript
+        ) != nil
+    }
+
+    /// Wispr Flow-style "AI edit undo": when the smart cleanup over-edited,
+    /// recover exactly what was said. If the last cleaned dictation is still
+    /// sitting immediately before the caret, select it with the same
+    /// accessibility machinery the wake-command REPLACE_PREVIOUS flow uses
+    /// and paste the literal (pre-cleanup) transcript over the selection.
+    @MainActor
+    func revertLastDictationToRaw() {
+        guard !isRecording, !isTranscribing else { return }
+        let context = fallbackContextAtStop()
+        guard let item = recentDictationHistoryItem(in: context, now: Date()),
+              let rawTranscript = RawRevertEligibility.revertTarget(
+                  rawTranscript: item.rawTranscript,
+                  cleanedTranscript: item.postProcessedTranscript
+              ) else {
+            overlayManager.showError("Nothing to revert: no recent cleaned dictation in this app.")
+            return
+        }
+
+        let cleanedTarget = item.postProcessedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
+        let pendingClipboardRestore = writeTranscriptToPasteboard(rawTranscript)
+        pasteAtCursorWhenShortcutReleased(performPaste: false) { [weak self] in
+            guard let self else { return }
+            guard self.contextService.selectTextImmediatelyBeforeCaret(matching: cleanedTarget) else {
+                // Nothing was selected, so pasting would duplicate text
+                // instead of replacing it. Leave the document alone.
+                self.restoreClipboardIfNeeded(pendingClipboardRestore)
+                self.overlayManager.showError("Couldn't revert: the dictated text is no longer at the cursor.")
+                return
+            }
+            self.pasteAtCursor()
+            self.restoreClipboardIfNeeded(pendingClipboardRestore)
+            self.recordRawRevert(of: item, rawTranscript: rawTranscript)
+        }
+    }
+
+    /// After a successful revert the literal transcript is what sits before
+    /// the caret, so it becomes the tracked previous text: follow-up wake
+    /// commands ("megaphone, make that shorter") must edit the reverted
+    /// words, and Paste Again must repeat them.
+    @MainActor
+    private func recordRawRevert(of item: PipelineHistoryItem, rawTranscript: String) {
+        let updatedItem = PipelineHistoryItem(
+            intent: item.intent,
+            selectedText: item.selectedText,
+            capturedSelection: item.capturedSelection,
+            id: item.id,
+            timestamp: item.timestamp,
+            rawTranscript: item.rawTranscript,
+            postProcessedTranscript: rawTranscript,
+            postProcessingPrompt: item.postProcessingPrompt,
+            systemPrompt: item.systemPrompt,
+            contextSummary: item.contextSummary,
+            contextSystemPrompt: item.contextSystemPrompt,
+            contextPrompt: item.contextPrompt,
+            contextScreenshotDataURL: item.contextScreenshotDataURL,
+            contextScreenshotStatus: item.contextScreenshotStatus,
+            postProcessingStatus: item.postProcessingStatus + " — reverted to literal transcript",
+            debugStatus: item.debugStatus,
+            customVocabulary: item.customVocabulary,
+            audioFileName: item.audioFileName,
+            contextAppName: item.contextAppName,
+            contextBundleIdentifier: item.contextBundleIdentifier,
+            contextWindowTitle: item.contextWindowTitle
+        )
+        do {
+            try pipelineHistoryStore.update(updatedItem)
+            pipelineHistory = pipelineHistoryStore.loadAllHistory()
+        } catch {
+            errorMessage = "Unable to save revert in run history: \(error.localizedDescription)"
+        }
+        lastTranscript = rawTranscript
+        statusText = "Reverted to literal transcript"
+        scheduleReadyStatusReset(after: 3, matching: ["Reverted to literal transcript"])
+    }
+
     func toggleRecording() {
         os_log(.info, log: recordingLog, "toggleRecording() called, isRecording=%{public}d", isRecording)
         cancelPendingShortcutStart()
@@ -2403,8 +2491,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// The newest pipeline-history entry whose inserted text is recent
+    /// enough (`wakeCommandPreviousTextWindow`) to still count as "the
+    /// previous dictation". Pass a context to additionally require that the
+    /// entry was dictated into the same app and window; pass nil when the
+    /// destination cannot be known yet (e.g. menu item validation).
     @MainActor
-    private func recentTextForWakeCommand(in context: AppContext, now: Date) -> String? {
+    private func recentDictationHistoryItem(in context: AppContext?, now: Date) -> PipelineHistoryItem? {
         pipelineHistory.first { item in
             let text = item.postProcessedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return false }
@@ -2413,6 +2506,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
             let age = now.timeIntervalSince(item.timestamp)
             guard age >= 0, age <= wakeCommandPreviousTextWindow else { return false }
+            guard let context else { return true }
 
             let previousBundleID = item.contextBundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
             let currentBundleID = context.bundleIdentifier?.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -2430,7 +2524,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return false
             }
             return true
-        }?.postProcessedTranscript
+        }
+    }
+
+    @MainActor
+    private func recentTextForWakeCommand(in context: AppContext, now: Date) -> String? {
+        recentDictationHistoryItem(in: context, now: now)?.postProcessedTranscript
     }
 
     private func processTranscript(
