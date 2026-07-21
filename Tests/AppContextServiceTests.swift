@@ -11,6 +11,9 @@ struct AppContextServiceTests {
         testAppWritingContextClassification()
         testMarkdownSurfaceDetection()
         testCleanupPromptUsesLocalAppStyle()
+        testCleanupPromptIncludesTextBeforeCaret()
+        testCaretContextCaseHarmonization()
+        testCaretContextRepetitionStripping()
         testSelectionPromptUsesDestinationContext()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
@@ -209,6 +212,181 @@ struct AppContextServiceTests {
         expect(prompt.contains("Writing context: work chat"), "Cleanup prompt lost Slack context")
         expect(prompt.contains("concise, professional chat formatting"), "Slack cleanup guidance missing")
         expect(prompt.contains("do not make the message more formal unless asked"), "Cleanup should preserve tone")
+    }
+
+    private static func testCleanupPromptIncludesTextBeforeCaret() {
+        func request(textBeforeCaret: String?) -> SmartCleanupRequest {
+            SmartCleanupRequest(
+                transcript: "definitely ship it tomorrow",
+                appName: "Notes",
+                bundleIdentifier: "com.apple.Notes",
+                windowTitle: "Ideas",
+                selectedText: nil,
+                textBeforeCaret: textBeforeCaret,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: ""
+            )
+        }
+        let hintMarker = "Text immediately before the cursor"
+
+        let withCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "I think we should")
+        )
+        expect(withCaretContext.contains(hintMarker), "Caret context hint missing")
+        expect(withCaretContext.contains("\"I think we should\""), "Caret context text missing from hint")
+        expect(withCaretContext.contains("start lowercase"), "Mid-sentence caret context must direct a lowercase continuation")
+
+        let afterSentence = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "Let me check the logs.")
+        )
+        expect(afterSentence.contains("capitalize its first word"), "Sentence-ending caret context must direct a fresh sentence")
+
+        let multiline = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "Meeting notes:\nI think we should")
+        )
+        expect(multiline.contains("\"Meeting notes: I think we should\""), "Caret context must be flattened to one line")
+
+        expect(
+            AppleFoundationModelsPostProcessor.caretContinuesSentence("I think we should"),
+            "Mid-sentence text must continue the sentence"
+        )
+        expect(
+            AppleFoundationModelsPostProcessor.caretContinuesSentence("We talked it over and,"),
+            "A trailing comma must continue the sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Let me check the logs."),
+            "A trailing period must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Really?!"),
+            "Trailing sentence punctuation must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("He said \u{201C}done.\u{201D}"),
+            "A period inside closing quotes must start a fresh sentence"
+        )
+        expect(
+            !AppleFoundationModelsPostProcessor.caretContinuesSentence("Shopping list\n"),
+            "A trailing newline must start a fresh sentence"
+        )
+
+        let withoutCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: nil)
+        )
+        expect(!withoutCaretContext.contains(hintMarker), "Caret context hint must be omitted when nil")
+
+        let withBlankCaretContext = AppleFoundationModelsPostProcessor.cleanupPrompt(
+            for: request(textBeforeCaret: "  \n ")
+        )
+        expect(!withBlankCaretContext.contains(hintMarker), "Caret context hint must be omitted when blank")
+
+        // Existing call sites that never pass textBeforeCaret keep compiling
+        // and produce no caret hint.
+        let defaulted = AppleFoundationModelsPostProcessor.cleanupPrompt(for: SmartCleanupRequest(
+            transcript: "definitely ship it tomorrow",
+            appName: "Notes",
+            bundleIdentifier: "com.apple.Notes",
+            windowTitle: "Ideas",
+            selectedText: nil,
+            contextSummary: "",
+            vocabulary: [],
+            corrections: [],
+            outputLanguage: "",
+            customInstructions: ""
+        ))
+        expect(!defaulted.contains(hintMarker), "Defaulted textBeforeCaret must omit the caret hint")
+    }
+
+    private static func testCaretContextCaseHarmonization() {
+        func harmonized(_ text: String, transcript: String, before: String?) -> String {
+            AppleFoundationModelsPostProcessor.harmonizeCaseWithCaretContext(text, request: SmartCleanupRequest(
+                transcript: transcript,
+                appName: nil,
+                bundleIdentifier: nil,
+                windowTitle: nil,
+                selectedText: nil,
+                textBeforeCaret: before,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: ""
+            ))
+        }
+
+        expectEqual(
+            harmonized("Definitely ship it", transcript: "um definitely ship it", before: "I think we should"),
+            "definitely ship it"
+        )
+        expectEqual(
+            harmonized("Ian should go", transcript: "Ian should go", before: "I think"),
+            "Ian should go"
+        )
+        expectEqual(
+            harmonized("I should go", transcript: "I should go", before: "maybe"),
+            "I should go"
+        )
+        expectEqual(
+            harmonized("we might need to roll back", transcript: "we might need to roll back", before: "Let me check the logs."),
+            "We might need to roll back"
+        )
+        expectEqual(
+            harmonized("iPhone sales dropped", transcript: "iPhone sales dropped", before: "Let me check the logs."),
+            "iPhone sales dropped"
+        )
+        expectEqual(
+            harmonized("Definitely ship it", transcript: "definitely ship it", before: nil),
+            "Definitely ship it"
+        )
+    }
+
+    private static func testCaretContextRepetitionStripping() {
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could probably try the beta first thing.",
+                before: "I guess the team could"
+            ),
+            "probably try the beta first thing."
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I think we should ship",
+                before: "Yesterday we agreed that I think we should"
+            ),
+            "ship"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could, probably try the beta",
+                before: "I guess the team could"
+            ),
+            "probably try the beta"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "should we reconsider",
+                before: "I think we should"
+            ),
+            "should we reconsider"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "hi everyone",
+                before: "Hi"
+            ),
+            "hi everyone"
+        )
+        expectEqual(
+            AppleFoundationModelsPostProcessor.stripRepeatedCaretPrefix(
+                "I guess the team could",
+                before: "I guess the team could"
+            ),
+            "I guess the team could"
+        )
     }
 
     private static func testSelectionPromptUsesDestinationContext() {
