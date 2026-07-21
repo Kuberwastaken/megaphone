@@ -1248,7 +1248,8 @@ struct DictionarySettingsView: View {
     }
 
     private var savedEntries: [DictionaryEntry] {
-        store.entries.filter { $0.status == .active && matchesSearch($0) }
+        let matches = store.entries.filter { $0.status == .active && matchesSearch($0) }
+        return matches.filter(\.starred) + matches.filter { !$0.starred }
     }
 
     var body: some View {
@@ -1369,6 +1370,10 @@ struct DictionarySettingsView: View {
                         Text("·")
                         Text("Heard \(entry.observationCount) times")
                     }
+                    if !isSuggestion && entry.usageCount > 0 {
+                        Text("·")
+                        Text("Used \(entry.usageCount) time\(entry.usageCount == 1 ? "" : "s")")
+                    }
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1381,6 +1386,12 @@ struct DictionarySettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             } else {
+                Button { store.setStarred(!entry.starred, for: entry.id) } label: {
+                    Image(systemName: entry.starred ? "star.fill" : "star")
+                        .foregroundStyle(entry.starred ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(entry.starred ? "Unstar this word" : "Star this word so it is always prioritized")
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { store.setEnabled($0, for: entry.id) }

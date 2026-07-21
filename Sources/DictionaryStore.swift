@@ -19,6 +19,8 @@ struct DictionaryEntry: Codable, Identifiable, Equatable {
     var status: Status
     var isEnabled: Bool
     var observationCount: Int
+    var starred: Bool
+    var usageCount: Int
     var createdAt: Date
     var updatedAt: Date
 
@@ -29,6 +31,8 @@ struct DictionaryEntry: Codable, Identifiable, Equatable {
         status: Status,
         isEnabled: Bool = true,
         observationCount: Int = 0,
+        starred: Bool = false,
+        usageCount: Int = 0,
         createdAt: Date = Date(),
         updatedAt: Date = Date()
     ) {
@@ -38,8 +42,35 @@ struct DictionaryEntry: Codable, Identifiable, Equatable {
         self.status = status
         self.isEnabled = isEnabled
         self.observationCount = observationCount
+        self.starred = starred
+        self.usageCount = usageCount
         self.createdAt = createdAt
         self.updatedAt = updatedAt
+    }
+
+    /// Entries stored before starring/usage ranking shipped lack these keys;
+    /// decode them with safe defaults so existing dictionaries keep loading.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(UUID.self, forKey: .id)
+        term = try container.decode(String.self, forKey: .term)
+        source = try container.decode(Source.self, forKey: .source)
+        status = try container.decode(Status.self, forKey: .status)
+        isEnabled = try container.decode(Bool.self, forKey: .isEnabled)
+        observationCount = try container.decode(Int.self, forKey: .observationCount)
+        starred = try container.decodeIfPresent(Bool.self, forKey: .starred) ?? false
+        usageCount = try container.decodeIfPresent(Int.self, forKey: .usageCount) ?? 0
+        createdAt = try container.decode(Date.self, forKey: .createdAt)
+        updatedAt = try container.decode(Date.self, forKey: .updatedAt)
+    }
+
+    /// Prompt-facing ranking: starred terms first, then most-used, then
+    /// alphabetical — so downstream caps (e.g. `prefix(40)`) keep the terms
+    /// the user actually relies on.
+    static func promptRanking(_ lhs: DictionaryEntry, _ rhs: DictionaryEntry) -> Bool {
+        if lhs.starred != rhs.starred { return lhs.starred }
+        if lhs.usageCount != rhs.usageCount { return lhs.usageCount > rhs.usageCount }
+        return lhs.term.localizedCaseInsensitiveCompare(rhs.term) == .orderedAscending
     }
 }
 
@@ -96,8 +127,8 @@ final class DictionaryStore: ObservableObject {
     var activeTerms: [String] {
         entries
             .filter { $0.status == .active && $0.isEnabled }
+            .sorted(by: DictionaryEntry.promptRanking)
             .map(\.term)
-            .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }
 
     /// Projection consumed by the existing newline-delimited vocabulary pipeline.
@@ -145,6 +176,54 @@ final class DictionaryStore: ObservableObject {
         entries[index].isEnabled = enabled
         entries[index].updatedAt = Date()
         persist()
+    }
+
+    func setStarred(_ starred: Bool, for id: UUID) {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { return }
+        entries[index].starred = starred
+        entries[index].updatedAt = Date()
+        persist()
+    }
+
+    /// Counts which enabled entries a finished dictation actually used, so the
+    /// vocabulary ranking favors terms that keep showing up. Called once per
+    /// successful dictation with the final pasted transcript; scans enabled
+    /// active entries in a single pass and persists at most once.
+    func recordUsage(in transcript: String) {
+        let transcript = transcript.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !transcript.isEmpty else { return }
+        var didIncrement = false
+        for index in entries.indices where entries[index].status == .active && entries[index].isEnabled {
+            guard Self.containsWholeWord(entries[index].term, in: transcript) else { continue }
+            entries[index].usageCount += 1
+            didIncrement = true
+        }
+        if didIncrement { persist() }
+    }
+
+    /// Case- and diacritic-insensitive containment that only matches at word
+    /// boundaries, so "AI" never matches inside "maintain".
+    static func containsWholeWord(_ term: String, in text: String) -> Bool {
+        guard !term.isEmpty else { return false }
+        var searchStart = text.startIndex
+        while searchStart < text.endIndex,
+              let found = text.range(
+                  of: term,
+                  options: [.caseInsensitive, .diacriticInsensitive],
+                  range: searchStart..<text.endIndex
+              ) {
+            let boundedBefore = found.lowerBound == text.startIndex
+                || !isWordCharacter(text[text.index(before: found.lowerBound)])
+            let boundedAfter = found.upperBound == text.endIndex
+                || !isWordCharacter(text[found.upperBound])
+            if boundedBefore && boundedAfter { return true }
+            searchStart = text.index(after: found.lowerBound)
+        }
+        return false
+    }
+
+    private static func isWordCharacter(_ character: Character) -> Bool {
+        character.isLetter || character.isNumber
     }
 
     func acceptSuggestion(id: UUID) {
