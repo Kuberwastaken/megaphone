@@ -442,6 +442,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Cleanup", icon: "sparkles") {
                     cleanupSection
                 }
+                SettingsCard("Writing Style", icon: "textformat") {
+                    writingStyleSection
+                }
                 SettingsCard("Output Language", icon: "globe") {
                     outputLanguageSection
                 }
@@ -749,6 +752,41 @@ struct GeneralSettingsView: View {
             return "Instant deterministic cleanup for fillers, stutters, repeated words, and spacing."
         case .exact:
             return "Preserves the words you spoke, with only the minimum formatting needed for insertion."
+        }
+    }
+
+    // MARK: Writing Style
+
+    private var writingStyleSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            formalityRow("Email", context: .email)
+            formalityRow("Work chat", context: .workChat)
+            formalityRow("Personal chat", context: .casualChat)
+            formalityRow("Documents", context: .document)
+            formalityRow("Everything else", context: .neutral)
+
+            Text("How Smart Cleanup punctuates and polishes your words in each kind of app. Your wording and meaning are never changed; code and terminal apps always stay technical.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
+
+    private func formalityRow(_ label: String, context: AppWritingContext) -> some View {
+        HStack(spacing: 8) {
+            Text(label)
+                .font(.caption)
+            Spacer()
+            Picker("", selection: Binding(
+                get: { appState.writingFormality(for: context) },
+                set: { appState.setWritingFormality($0, for: context) }
+            )) {
+                ForEach(WritingFormality.allCases, id: \.self) { formality in
+                    Text(formality.title).tag(formality)
+                }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .frame(width: 260)
         }
     }
 
@@ -1219,7 +1257,8 @@ struct DictionarySettingsView: View {
     }
 
     private var savedEntries: [DictionaryEntry] {
-        store.entries.filter { $0.status == .active && matchesSearch($0) }
+        let matches = store.entries.filter { $0.status == .active && matchesSearch($0) }
+        return matches.filter(\.starred) + matches.filter { !$0.starred }
     }
 
     var body: some View {
@@ -1340,6 +1379,10 @@ struct DictionarySettingsView: View {
                         Text("·")
                         Text("Heard \(entry.observationCount) times")
                     }
+                    if !isSuggestion && entry.usageCount > 0 {
+                        Text("·")
+                        Text("Used \(entry.usageCount) time\(entry.usageCount == 1 ? "" : "s")")
+                    }
                 }
                 .font(.caption2)
                 .foregroundStyle(.secondary)
@@ -1352,6 +1395,12 @@ struct DictionarySettingsView: View {
                     .buttonStyle(.borderedProminent)
                     .controlSize(.small)
             } else {
+                Button { store.setStarred(!entry.starred, for: entry.id) } label: {
+                    Image(systemName: entry.starred ? "star.fill" : "star")
+                        .foregroundStyle(entry.starred ? Color.yellow : Color.secondary)
+                }
+                .buttonStyle(.borderless)
+                .help(entry.starred ? "Unstar this word" : "Star this word so it is always prioritized")
                 Toggle("", isOn: Binding(
                     get: { entry.isEnabled },
                     set: { store.setEnabled($0, for: entry.id) }
@@ -2146,11 +2195,12 @@ struct VoiceMacrosSettingsView: View {
                 SettingsCard("Voice Macros", icon: "music.mic") {
                     macrosSection
                 }
+                .sheet(isPresented: $showingAddMacro, onDismiss: { editingMacro = nil }) {
+                    VoiceMacroEditorView(isPresented: $showingAddMacro, macro: $editingMacro)
+                }
+                TransformsSettingsView()
             }
             .padding(24)
-        }
-        .sheet(isPresented: $showingAddMacro, onDismiss: { editingMacro = nil }) {
-            VoiceMacroEditorView(isPresented: $showingAddMacro, macro: $editingMacro)
         }
     }
 
@@ -2279,6 +2329,149 @@ struct VoiceMacroEditorView: View {
             if let m = macro {
                 command = m.command
                 payload = m.payload
+            }
+        }
+    }
+}
+
+// MARK: - Transforms Settings
+
+struct TransformsSettingsView: View {
+    @EnvironmentObject var appState: AppState
+    @State private var showingAddTransform = false
+    @State private var editingTransform: Transform?
+
+    var body: some View {
+        SettingsCard("Transforms", icon: "wand.and.stars") {
+            transformsSection
+        }
+        .sheet(isPresented: $showingAddTransform, onDismiss: { editingTransform = nil }) {
+            TransformEditorView(isPresented: $showingAddTransform, transform: $editingTransform)
+        }
+    }
+
+    private var transformsSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Text("Rewrite your last dictation by voice. Say “Hey Megaphone, polish that” right after dictating.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                Spacer()
+                Button(action: { showingAddTransform = true }) {
+                    Text("Add Transform")
+                }
+            }
+
+            VStack(spacing: 1) {
+                ForEach(appState.transforms) { transform in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(transform.name)
+                                .font(.headline)
+                            if transform.isBuiltIn {
+                                Image(systemName: "lock.fill")
+                                    .font(.caption)
+                                    .foregroundStyle(.tertiary)
+                                    .help("Built-in transform")
+                            }
+                            Spacer()
+                            if !transform.isBuiltIn {
+                                Button("Edit") {
+                                    editingTransform = transform
+                                    showingAddTransform = true
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+
+                                Button("Delete") {
+                                    appState.userTransforms.removeAll { $0.id == transform.id }
+                                }
+                                .buttonStyle(.borderless)
+                                .font(.caption)
+                                .foregroundStyle(.red)
+                            }
+                        }
+                        Text(transform.instruction)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .lineLimit(3)
+                    }
+                    .padding(12)
+                    .background(Color(nsColor: .controlBackgroundColor).opacity(0.8))
+                }
+            }
+            .cornerRadius(8)
+            .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.06), lineWidth: 1))
+
+            Text("Invoke a transform with “<name>”, “<name> that”, or “apply <name>”. A transform you name like a built-in replaces it.")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+        }
+    }
+}
+
+struct TransformEditorView: View {
+    @EnvironmentObject var appState: AppState
+    @Binding var isPresented: Bool
+    @Binding var transform: Transform?
+
+    @State private var name: String = ""
+    @State private var instruction: String = ""
+
+    var body: some View {
+        VStack(spacing: 20) {
+            Text(transform == nil ? "Add Transform" : "Edit Transform")
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 8) {
+                Text("Name (What you say after “Hey Megaphone”)")
+                    .font(.caption.weight(.semibold))
+                TextField("e.g. formalize", text: $name)
+                    .textFieldStyle(.roundedBorder)
+
+                Text("Instruction (How the text gets rewritten)")
+                    .font(.caption.weight(.semibold))
+                    .padding(.top, 8)
+                TextEditor(text: $instruction)
+                    .font(.system(.body, design: .monospaced))
+                    .frame(height: 150)
+                    .overlay(RoundedRectangle(cornerRadius: 6).stroke(Color.secondary.opacity(0.3), lineWidth: 1))
+            }
+
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                    transform = nil
+                }
+                Spacer()
+                Button("Save") {
+                    let newTransform = Transform(
+                        id: transform?.id ?? UUID(),
+                        name: name.trimmingCharacters(in: .whitespacesAndNewlines),
+                        instruction: instruction.trimmingCharacters(in: .whitespacesAndNewlines)
+                    )
+
+                    if let existingIndex = appState.userTransforms.firstIndex(where: { $0.id == newTransform.id }) {
+                        appState.userTransforms[existingIndex] = newTransform
+                    } else {
+                        appState.userTransforms.append(newTransform)
+                    }
+                    isPresented = false
+                    transform = nil
+                }
+                .disabled(
+                    name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                        || instruction.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                )
+                .buttonStyle(.borderedProminent)
+            }
+        }
+        .padding(20)
+        .frame(width: 400)
+        .onAppear {
+            if let t = transform {
+                name = t.name
+                instruction = t.instruction
             }
         }
     }
