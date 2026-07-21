@@ -38,10 +38,15 @@ enum SpeechAnalyzerServiceError: Error, LocalizedError {
 
 // MARK: - Locale resolution
 
-/// Maps Megaphone's stored language preference onto a locale supported by
-/// `SpeechTranscriber`. Handles the legacy values written by earlier
-/// versions ("auto", bare ISO codes like "en"/"hi", and the "hinglish"/
-/// "gujlish" pseudo-codes) as well as full BCP-47 identifiers.
+/// Maps Megaphone's stored language preference onto a supported locale.
+/// Handles the legacy values written by earlier versions ("auto", bare ISO
+/// codes like "en"/"hi", and the "hinglish"/"gujlish" pseudo-codes) as well
+/// as full BCP-47 identifiers.
+///
+/// Two on-device model lines back the union: `SpeechTranscriber` (the
+/// advanced macOS 26 model) and `DictationTranscriber` (the system-dictation
+/// model, which supports many more languages). The union list keeps advanced
+/// locales first so ties always resolve to the better model.
 enum SpeechLocaleResolver {
     /// Preference values that historically meant "no explicit language".
     private static let autoValues: Set<String> = ["", "auto"]
@@ -54,9 +59,22 @@ enum SpeechLocaleResolver {
         "gujlish": "en-IN",
     ]
 
+    /// Every locale Megaphone can transcribe, advanced-model locales first,
+    /// deduplicated by BCP-47 identifier.
+    static func supportedLocales() async -> [Locale] {
+        let advanced = await SpeechTranscriber.supportedLocales
+        let dictation = await DictationTranscriber.supportedLocales
+        var seen = Set<String>()
+        var union: [Locale] = []
+        for locale in advanced + dictation where seen.insert(locale.identifier(.bcp47)).inserted {
+            union.append(locale)
+        }
+        return union
+    }
+
     static func resolve(preference: String) async throws -> Locale {
         let trimmed = preference.trimmingCharacters(in: .whitespacesAndNewlines)
-        let supported = await SpeechTranscriber.supportedLocales
+        let supported = await supportedLocales()
         guard !supported.isEmpty else {
             throw SpeechAnalyzerServiceError.transcriberUnavailable
         }
@@ -92,10 +110,10 @@ enum SpeechLocaleResolver {
             ?? supported.first { $0.language.languageCode?.identifier == "en" }
     }
 
-    /// Options for the settings picker: "auto" plus every locale the
+    /// Options for the settings picker: "auto" plus every locale either
     /// on-device model supports, sorted by display name.
     static func pickerOptions() async -> [(code: String, name: String)] {
-        let supported = await SpeechTranscriber.supportedLocales
+        let supported = await supportedLocales()
         let locales = supported
             .map { locale -> (code: String, name: String) in
                 let code = locale.identifier(.bcp47)
@@ -124,22 +142,96 @@ enum SpeechAnalyzerService {
         return context
     }
 
-    static func makeTranscriber(locale: Locale) -> SpeechTranscriber {
-        SpeechTranscriber(
+    /// The transcription module chosen for a locale. Locales the advanced
+    /// macOS 26 model supports use `SpeechTranscriber`; everything else runs
+    /// on `DictationTranscriber`, the system-dictation model line — still
+    /// entirely on-device.
+    enum TranscriptionEngine {
+        case advanced(SpeechTranscriber)
+        case dictation(DictationTranscriber)
+
+        var module: any SpeechModule {
+            switch self {
+            case .advanced(let transcriber): return transcriber
+            case .dictation(let transcriber): return transcriber
+            }
+        }
+
+        /// Collects the module's finalized results into a single transcript.
+        func makeResultsCollector() -> Task<String, Error> {
+            switch self {
+            case .advanced(let transcriber):
+                return Task {
+                    var transcript = AttributedString("")
+                    for try await result in transcriber.results {
+                        transcript += result.text
+                    }
+                    return String(transcript.characters)
+                }
+            case .dictation(let transcriber):
+                return Task {
+                    var transcript = AttributedString("")
+                    for try await result in transcriber.results {
+                        transcript += result.text
+                    }
+                    return String(transcript.characters)
+                }
+            }
+        }
+    }
+
+    /// True when at least one on-device transcription model line exists on
+    /// this Mac.
+    static func isTranscriptionAvailable() async -> Bool {
+        if SpeechTranscriber.isAvailable { return true }
+        return await !DictationTranscriber.supportedLocales.isEmpty
+    }
+
+    /// Whether the locale's model assets are installed for whichever engine
+    /// would serve it.
+    static func isLocaleInstalled(_ locale: Locale) async -> Bool {
+        let target = locale.identifier(.bcp47)
+        let installed: [Locale]
+        switch await makeEngine(locale: locale) {
+        case .advanced: installed = await SpeechTranscriber.installedLocales
+        case .dictation: installed = await DictationTranscriber.installedLocales
+        }
+        return installed.contains { $0.identifier(.bcp47) == target }
+    }
+
+    static func makeEngine(locale: Locale) async -> TranscriptionEngine {
+        let target = locale.identifier(.bcp47)
+        let advanced = await SpeechTranscriber.supportedLocales
+        if advanced.contains(where: { $0.identifier(.bcp47) == target }) {
+            return .advanced(SpeechTranscriber(
+                locale: locale,
+                transcriptionOptions: [],
+                reportingOptions: [],
+                attributeOptions: []
+            ))
+        }
+        // Unlike SpeechTranscriber, the dictation model line does not
+        // punctuate unless asked to.
+        return .dictation(DictationTranscriber(
             locale: locale,
-            transcriptionOptions: [],
+            contentHints: [],
+            transcriptionOptions: [.punctuation],
             reportingOptions: [],
             attributeOptions: []
-        )
+        ))
     }
 
     /// Downloads and reserves the locale's model assets when missing. Safe to
     /// call repeatedly; returns immediately when everything is installed.
-    static func ensureAssets(for transcriber: SpeechTranscriber, locale: Locale) async throws {
+    static func ensureAssets(for engine: TranscriptionEngine, locale: Locale) async throws {
         let target = locale.identifier(.bcp47)
-        let installed = await SpeechTranscriber.installedLocales
+        let installed: [Locale]
+        switch engine {
+        case .advanced: installed = await SpeechTranscriber.installedLocales
+        case .dictation: installed = await DictationTranscriber.installedLocales
+        }
         if !installed.contains(where: { $0.identifier(.bcp47) == target }) {
-            if let request = try await AssetInventory.assetInstallationRequest(supporting: [transcriber]) {
+            if let request = try await AssetInventory.assetInstallationRequest(supporting: [engine.module]) {
                 os_log(.info, log: speechLog, "downloading speech model assets for %{public}@", target)
                 try await request.downloadAndInstall()
                 os_log(.info, log: speechLog, "speech model assets installed for %{public}@", target)
@@ -172,14 +264,11 @@ enum SpeechAnalyzerService {
         localePreference: String,
         vocabulary: String
     ) async throws -> String {
-        guard SpeechTranscriber.isAvailable else {
-            throw SpeechAnalyzerServiceError.transcriberUnavailable
-        }
         let locale = try await SpeechLocaleResolver.resolve(preference: localePreference)
-        let transcriber = makeTranscriber(locale: locale)
-        try await ensureAssets(for: transcriber, locale: locale)
+        let engine = await makeEngine(locale: locale)
+        try await ensureAssets(for: engine, locale: locale)
 
-        let analyzer = SpeechAnalyzer(modules: [transcriber])
+        let analyzer = SpeechAnalyzer(modules: [engine.module])
         if let context = vocabularyContext(from: vocabulary) {
             do {
                 try await analyzer.setContext(context)
@@ -188,13 +277,7 @@ enum SpeechAnalyzerService {
             }
         }
 
-        let resultsTask = Task<String, Error> {
-            var transcript = AttributedString("")
-            for try await result in transcriber.results {
-                transcript += result.text
-            }
-            return String(transcript.characters)
-        }
+        let resultsTask = engine.makeResultsCollector()
 
         let audioFile: AVAudioFile
         do {
@@ -310,14 +393,11 @@ final class SpeechAnalyzerStreamingSession: @unchecked Sendable {
     /// surface when `commitAndAwaitFinal()` awaits it.
     func start() {
         setupTask = Task { [self] in
-            guard SpeechTranscriber.isAvailable else {
-                throw SpeechAnalyzerServiceError.transcriberUnavailable
-            }
             let locale = try await SpeechLocaleResolver.resolve(preference: localePreference)
-            let transcriber = SpeechAnalyzerService.makeTranscriber(locale: locale)
-            try await SpeechAnalyzerService.ensureAssets(for: transcriber, locale: locale)
+            let engine = await SpeechAnalyzerService.makeEngine(locale: locale)
+            try await SpeechAnalyzerService.ensureAssets(for: engine, locale: locale)
 
-            let analyzer = SpeechAnalyzer(modules: [transcriber])
+            let analyzer = SpeechAnalyzer(modules: [engine.module])
             if let context = SpeechAnalyzerService.vocabularyContext(from: vocabulary) {
                 do {
                     try await analyzer.setContext(context)
@@ -326,18 +406,12 @@ final class SpeechAnalyzerStreamingSession: @unchecked Sendable {
                 }
             }
 
-            guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [transcriber]) else {
+            guard let format = await SpeechAnalyzer.bestAvailableAudioFormat(compatibleWith: [engine.module]) else {
                 throw SpeechAnalyzerServiceError.noCompatibleAudioFormat
             }
 
             let (inputSequence, builder) = AsyncStream<AnalyzerInput>.makeStream()
-            let collector = Task<String, Error> {
-                var transcript = AttributedString("")
-                for try await result in transcriber.results {
-                    transcript += result.text
-                }
-                return String(transcript.characters)
-            }
+            let collector = engine.makeResultsCollector()
             try await analyzer.start(inputSequence: inputSequence)
 
             queue.sync {
@@ -521,7 +595,7 @@ final class SpeechModelManager: ObservableObject {
     func refresh(localePreference: String) {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
-            guard SpeechTranscriber.isAvailable else {
+            guard await SpeechAnalyzerService.isTranscriptionAvailable() else {
                 self?.status = .unavailable
                 return
             }
@@ -534,9 +608,9 @@ final class SpeechModelManager: ObservableObject {
                 return
             }
             let name = Self.displayName(for: locale.identifier(.bcp47))
-            let installed = await SpeechTranscriber.installedLocales
+            let isInstalled = await SpeechAnalyzerService.isLocaleInstalled(locale)
             guard !Task.isCancelled else { return }
-            if installed.contains(where: { $0.identifier(.bcp47) == locale.identifier(.bcp47) }) {
+            if isInstalled {
                 self?.status = .installed(name)
             } else {
                 self?.status = .needsDownload(name)
@@ -549,7 +623,7 @@ final class SpeechModelManager: ObservableObject {
     func download(localePreference: String) {
         refreshTask?.cancel()
         refreshTask = Task { [weak self] in
-            guard SpeechTranscriber.isAvailable else {
+            guard await SpeechAnalyzerService.isTranscriptionAvailable() else {
                 self?.status = .unavailable
                 return
             }
@@ -565,8 +639,8 @@ final class SpeechModelManager: ObservableObject {
             guard !Task.isCancelled else { return }
             self?.status = .downloading(name)
             do {
-                let transcriber = SpeechAnalyzerService.makeTranscriber(locale: locale)
-                try await SpeechAnalyzerService.ensureAssets(for: transcriber, locale: locale)
+                let engine = await SpeechAnalyzerService.makeEngine(locale: locale)
+                try await SpeechAnalyzerService.ensureAssets(for: engine, locale: locale)
                 guard !Task.isCancelled else { return }
                 self?.status = .installed(name)
             } catch {
