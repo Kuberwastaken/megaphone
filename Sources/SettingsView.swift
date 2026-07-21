@@ -451,6 +451,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Dictation Shortcuts", icon: "keyboard.fill") {
                     hotkeySection
                 }
+                SettingsCard("Mouse Dictation", icon: "computermouse.fill") {
+                    mouseDictationSection
+                }
                 SettingsCard("Ask Megaphone", icon: "sparkles") {
                     wakeCommandSection
                 }
@@ -824,6 +827,22 @@ struct GeneralSettingsView: View {
                     .font(.caption)
                     .foregroundStyle(.secondary)
             }
+        }
+    }
+
+    // MARK: Mouse Dictation
+
+    private var mouseDictationSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Toggle("Enable mouse dictation", isOn: $appState.isMouseDictationEnabled)
+
+            MouseDictationButtonRow()
+                .disabled(!appState.isMouseDictationEnabled)
+                .opacity(appState.isMouseDictationEnabled ? 1 : 0.5)
+
+            Text("Hold the bound mouse button to dictate and release to stop — push-to-talk for the extra buttons on MMO mice and trackballs. While bound, that button's clicks are swallowed so they never press anything in the app under the cursor. Left and right buttons can't be used.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 

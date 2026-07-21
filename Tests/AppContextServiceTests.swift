@@ -27,6 +27,7 @@ struct AppContextServiceTests {
         ScratchCommandMatcherTests.run()
         RawRevertEligibilityTests.run()
         ShortcutCancelBindingTests.run()
+        MouseDictationButtonTests.run()
         print("MegaphoneTests passed")
     }
 
