@@ -238,12 +238,14 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let preserveExactWordingStorageKey = "preserve_exact_wording"
     private let keepDictationInClipboardHistoryStorageKey = "keep_dictation_in_clipboard_history"
     private let pressEnterVoiceCommandStorageKey = "press_enter_voice_command_enabled"
+    private let scratchThatCommandStorageKey = "scratch_that_command_enabled"
     private let alertSoundsEnabledStorageKey = "alert_sounds_enabled"
     private let soundVolumeStorageKey = "sound_volume"
     private let startSoundNameStorageKey = "start_sound_name"
     private let stopSoundNameStorageKey = "stop_sound_name"
     private let errorSoundNameStorageKey = "error_sound_name"
     private let voiceMacrosStorageKey = "voice_macros"
+    private let userTransformsStorageKey = "user_transforms"
     private let wakeCommandsEnabledStorageKey = "wake_commands_enabled"
     private let plainMegaphoneWakeWordEnabledStorageKey = "plain_megaphone_wake_word_enabled"
     private let wakeScreenContextEnabledStorageKey = "wake_screen_context_enabled"
@@ -251,6 +253,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let commandModeStyleStorageKey = "command_mode_style"
     private let commandModeManualModifierStorageKey = "command_mode_manual_modifier"
     private let outputLanguageStorageKey = "output_language"
+    private let writingFormalityByContextStorageKey = "writing_formality_by_context"
     private let dictationAudioInterruptionEnabledStorageKey = "dictation_audio_interruption_enabled"
     private let pasteAfterShortcutReleaseDelay: TimeInterval = 0.03
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
@@ -423,6 +426,25 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Writing-style dial per writing-context bucket, keyed by
+    /// `AppWritingContext.rawValue` with `WritingFormality.rawValue` values.
+    /// Missing entries mean `.balanced` (the current behavior). Code and
+    /// terminal apps are exempt and never consult this.
+    @Published var writingFormalityByContext: [String: String] {
+        didSet {
+            UserDefaults.standard.set(writingFormalityByContext, forKey: writingFormalityByContextStorageKey)
+        }
+    }
+
+    func writingFormality(for context: AppWritingContext) -> WritingFormality {
+        guard context != .codeOrTerminal else { return .balanced }
+        return WritingFormality(rawValue: writingFormalityByContext[context.rawValue] ?? "") ?? .balanced
+    }
+
+    func setWritingFormality(_ formality: WritingFormality, for context: AppWritingContext) {
+        writingFormalityByContext[context.rawValue] = formality.rawValue
+    }
+
     @Published var shortcutStartDelay: TimeInterval {
         didSet {
             UserDefaults.standard.set(shortcutStartDelay, forKey: shortcutStartDelayStorageKey)
@@ -459,6 +481,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published var isPressEnterVoiceCommandEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isPressEnterVoiceCommandEnabled, forKey: pressEnterVoiceCommandStorageKey)
+        }
+    }
+
+    @Published var isScratchThatCommandEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(isScratchThatCommandEnabled, forKey: scratchThatCommandStorageKey)
         }
     }
 
@@ -501,6 +529,20 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
             precomputeMacros()
         }
+    }
+
+    @Published var userTransforms: [Transform] = [] {
+        didSet {
+            if let data = try? JSONEncoder().encode(userTransforms) {
+                UserDefaults.standard.set(data, forKey: userTransformsStorageKey)
+            }
+        }
+    }
+
+    /// Built-in transforms merged with the user's own; a user transform
+    /// shadows a built-in with the same name.
+    var transforms: [Transform] {
+        TransformStore.resolved(userTransforms: userTransforms)
     }
 
     @Published var plainMegaphoneWakeWordEnabled: Bool {
@@ -598,6 +640,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private var pendingMicrophonePermissionManualCommandRequested: Bool?
     private let postTranscriptionUpdateReminderDuration: TimeInterval = 7
     private let wakeCommandPreviousTextWindow: TimeInterval = 120
+    /// History entries recorded at or before this instant are ignored when
+    /// looking up the previously inserted dictation. Set after "scratch that"
+    /// deletes text so a repeated scratch (or a wake command) cannot act on
+    /// the already-deleted dictation again.
+    private var previousDictationInvalidatedAt: Date?
 
     init() {
         UserDefaults.standard.removeObject(forKey: "force_http2_transcription")
@@ -634,6 +681,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let customSystemPromptLastModified = UserDefaults.standard.string(forKey: customSystemPromptLastModifiedStorageKey) ?? ""
         let customContextPromptLastModified = UserDefaults.standard.string(forKey: customContextPromptLastModifiedStorageKey) ?? ""
         let outputLanguage = UserDefaults.standard.string(forKey: outputLanguageStorageKey) ?? ""
+        let writingFormalityByContext = UserDefaults.standard
+            .dictionary(forKey: writingFormalityByContextStorageKey) as? [String: String] ?? [:]
         let shortcutStartDelay = max(0, UserDefaults.standard.double(forKey: shortcutStartDelayStorageKey))
         let isCommandModeEnabled = UserDefaults.standard.object(forKey: commandModeEnabledStorageKey) == nil
             ? false
@@ -658,6 +707,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let isPressEnterVoiceCommandEnabled = UserDefaults.standard.object(forKey: pressEnterVoiceCommandStorageKey) == nil
             ? true
             : UserDefaults.standard.bool(forKey: pressEnterVoiceCommandStorageKey)
+        let isScratchThatCommandEnabled = UserDefaults.standard.object(forKey: scratchThatCommandStorageKey) == nil
+            ? true
+            : UserDefaults.standard.bool(forKey: scratchThatCommandStorageKey)
         let soundVolume: Float = UserDefaults.standard.object(forKey: soundVolumeStorageKey) != nil
             ? UserDefaults.standard.float(forKey: soundVolumeStorageKey) : 1.0
         let alertSoundsEnabled = UserDefaults.standard.object(forKey: alertSoundsEnabledStorageKey) != nil
@@ -673,6 +725,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
             initialMacros = decoded
         } else {
             initialMacros = []
+        }
+        let initialUserTransforms: [Transform]
+        if let data = UserDefaults.standard.data(forKey: "user_transforms"),
+           let decoded = try? JSONDecoder().decode([Transform].self, from: data) {
+            initialUserTransforms = decoded
+        } else {
+            initialUserTransforms = []
         }
         let plainMegaphoneWakeWordEnabled = UserDefaults.standard.bool(
             forKey: plainMegaphoneWakeWordEnabledStorageKey
@@ -719,18 +778,21 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.customSystemPromptLastModified = customSystemPromptLastModified
         self.customContextPromptLastModified = customContextPromptLastModified
         self.outputLanguage = outputLanguage
+        self.writingFormalityByContext = writingFormalityByContext
         self.shortcutStartDelay = shortcutStartDelay
         self.preserveClipboard = preserveClipboard
         self.preserveExactWording = smartCleanupMode == .exact
         self.keepDictationInClipboardHistory = keepDictationInClipboardHistory
         self.dictationAudioInterruptionEnabled = dictationAudioInterruptionEnabled
         self.isPressEnterVoiceCommandEnabled = isPressEnterVoiceCommandEnabled
+        self.isScratchThatCommandEnabled = isScratchThatCommandEnabled
         self.alertSoundsEnabled = alertSoundsEnabled
         self.soundVolume = soundVolume
         self.startSoundName = startSoundName
         self.stopSoundName = stopSoundName
         self.errorSoundName = errorSoundName
         self.voiceMacros = initialMacros
+        self.userTransforms = initialUserTransforms
         self.wakeCommandsEnabled = wakeCommandsEnabled
         self.wakeScreenContextEnabled = wakeScreenContextEnabled
         self.plainMegaphoneWakeWordEnabled = plainMegaphoneWakeWordEnabled
@@ -1039,6 +1101,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: nil,
             windowTitle: nil,
             selectedText: nil,
+            textBeforeCaret: nil,
             currentActivity: item.contextSummary
         )
 
@@ -2397,6 +2460,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         case commandModeFailedFallback(invocation: CommandInvocation)
         case wakeCommandSucceeded(phrase: WakePhrase, elapsed: TimeInterval)
         case wakeCommandFailedFallback(phrase: WakePhrase, reason: String)
+        case transformApplied(name: String, elapsed: TimeInterval)
 
         func statusMessage(isRetry: Bool = false) -> String {
             switch self {
@@ -2421,6 +2485,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 return "\(phrase.displayName) command succeeded (\(String(format: "%.2fs", elapsed)))"
             case .wakeCommandFailedFallback(let phrase, let reason):
                 return "\(phrase.displayName) command unavailable; pasted request (\(reason))"
+            case .transformApplied(let name, let elapsed):
+                return "Transform “\(name)” applied (\(String(format: "%.2fs", elapsed)))"
             }
         }
     }
@@ -2435,6 +2501,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         pipelineHistory.first { item in
             let text = item.postProcessedTranscript.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !text.isEmpty else { return false }
+            if let invalidatedAt = previousDictationInvalidatedAt, item.timestamp <= invalidatedAt {
+                return false
+            }
             let age = now.timeIntervalSince(item.timestamp)
             guard age >= 0, age <= wakeCommandPreviousTextWindow else { return false }
             guard let context else { return true }
@@ -2494,6 +2563,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
         let corrections = TranscriptTidier.CorrectionMapping.parse(wordCorrections)
+        // The user's standing writing-style dial for wherever this dictation
+        // lands, resolved from the context captured at recording time.
+        let formality = writingFormality(for: AppWritingContext.classify(
+            appName: context.appName,
+            bundleIdentifier: context.bundleIdentifier,
+            windowTitle: context.windowTitle
+        ))
 
         if wakeCommandsEnabled, case .dictation = intent, let wake = WakePhraseMatcher.detect(
             in: trimmedRawTranscript,
@@ -2502,6 +2578,42 @@ final class AppState: ObservableObject, @unchecked Sendable {
             let command = wake.trailingText.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !command.isEmpty else {
                 return ("", .wakeCommandFailedFallback(phrase: wake.phrase, reason: "empty request"), "", nil)
+            }
+            // Transform invocations ("polish that") are matched
+            // deterministically and never routed through the command model:
+            // the named directive is applied to the recent dictation and the
+            // result replaces it, exactly like REPLACE_PREVIOUS.
+            if let transform = TransformStore.match(command: command, in: transforms) {
+                guard let previousText, !previousText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+                    return (
+                        "",
+                        .wakeCommandFailedFallback(phrase: wake.phrase, reason: "no recent dictation to transform"),
+                        "",
+                        nil
+                    )
+                }
+                do {
+                    let result = try await AppleFoundationModelsPostProcessor.shared.applyTransform(
+                        instruction: transform.instruction,
+                        to: previousText,
+                        vocabulary: vocabulary,
+                        timeout: 5
+                    )
+                    return (
+                        result.text,
+                        .transformApplied(name: transform.name, elapsed: result.elapsed),
+                        result.prompt,
+                        previousText
+                    )
+                } catch {
+                    os_log(.error, log: recordingLog, "Transform failed: %{public}@", error.localizedDescription)
+                    return (
+                        command,
+                        .wakeCommandFailedFallback(phrase: wake.phrase, reason: error.localizedDescription),
+                        "",
+                        nil
+                    )
+                }
             }
             // Read the visible window text on-device so requests that point
             // at on-screen content ("reply to this email") have their source.
@@ -2522,6 +2634,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     previousText: previousText,
                     screenText: screenText,
                     vocabulary: vocabulary,
+                    formality: formality,
                     timeout: 5
                 )
                 return (
@@ -2550,6 +2663,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                     bundleIdentifier: context.bundleIdentifier,
                     windowTitle: context.windowTitle,
                     vocabulary: vocabulary,
+                    formality: formality,
                     sessionID: smartSessionID,
                     timeout: 4
                 )
@@ -2582,6 +2696,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 bundleIdentifier: context.bundleIdentifier,
                 windowTitle: context.windowTitle,
                 selectedText: context.selectedText,
+                textBeforeCaret: context.textBeforeCaret,
                 contextSummary: context.contextSummary,
                 vocabulary: vocabulary,
                 corrections: corrections.map {
@@ -2590,7 +2705,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 outputLanguage: outputLanguage,
                 customInstructions: [customSystemPrompt, customContextPrompt]
                     .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
-                    .joined(separator: "\n")
+                    .joined(separator: "\n"),
+                formality: formality
             )
             let result = try await AppleFoundationModelsPostProcessor.shared.cleanup(
                 request,
@@ -2726,12 +2842,21 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         pressEnterCommandEnabled: self.isPressEnterVoiceCommandEnabled
                     )
                     try Task.checkCancellation()
+                    let isScratchCommand: Bool
+                    if case .dictation = sessionIntent {
+                        isScratchCommand = self.isScratchThatCommandEnabled
+                            && ScratchCommandMatcher.matches(parsedTranscript.transcript)
+                    } else {
+                        isScratchCommand = false
+                    }
                     // Capture the parsed raw transcript as lastTranscript before
                     // post-processing runs. If anything after this throws or focus
                     // shifts mid-paste, the Paste Again shortcut still has the raw
                     // text instead of the previous dictation's stale value.
+                    // Scratch commands never paste, so they keep the previous
+                    // transcript available for Paste Again instead.
                     let bootstrapTranscript = parsedTranscript.transcript.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if !bootstrapTranscript.isEmpty {
+                    if !isScratchCommand, !bootstrapTranscript.isEmpty {
                         await MainActor.run { [weak self] in
                             self?.lastTranscript = bootstrapTranscript
                         }
@@ -2748,6 +2873,18 @@ final class AppState: ObservableObject, @unchecked Sendable {
                         self.recentTextForWakeCommand(in: appContext, now: Date())
                     }
                     try Task.checkCancellation()
+                    if isScratchCommand {
+                        await MainActor.run {
+                            guard self.isTranscribing else { return }
+                            self.completeScratchCommand(
+                                previousText: previousText,
+                                rawTranscript: parsedTranscript.transcript,
+                                context: appContext,
+                                audioFileName: savedAudioFile?.fileName
+                            )
+                        }
+                        return
+                    }
                     await MainActor.run { [weak self] in
                         self?.debugStatusMessage = "Running post-processing"
                     }
@@ -2796,6 +2933,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
                                 )
                             default:
                                 break
+                            }
+                            if !trimmedFinalTranscript.isEmpty {
+                                DictionaryStore.shared.recordUsage(in: trimmedFinalTranscript)
                             }
                         }
                         self.recordPipelineHistoryEntry(
@@ -2967,6 +3107,95 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    /// Terminal handling for a whole-utterance "scratch that" dictation: the
+    /// utterance is never pasted; instead the previously inserted dictation
+    /// is deleted when it still sits immediately before the caret.
+    @MainActor
+    private func completeScratchCommand(
+        previousText: String?,
+        rawTranscript: String,
+        context: AppContext,
+        audioFileName: String?
+    ) {
+        lastContextSummary = context.contextSummary
+        lastContextScreenshotDataURL = nil
+        lastContextScreenshotStatus = "Not captured (local-only)"
+        lastContextAppName = context.appName ?? ""
+        lastContextBundleIdentifier = context.bundleIdentifier ?? ""
+        lastContextWindowTitle = context.windowTitle ?? ""
+        lastContextSelectedText = context.selectedText ?? ""
+        lastContextLLMPrompt = ""
+        lastPostProcessingPrompt = ""
+        lastRawTranscript = rawTranscript
+        lastPostProcessedTranscript = ""
+        transcriptionTask = nil
+        transcribingAudioFileName = nil
+        isTranscribing = false
+        endCriticalDictationActivity()
+        debugStatusMessage = "Done"
+        clearPendingOverlayDismissToken()
+        audioRecorder.cleanup()
+        refreshAvailableMicrophonesIfNeeded()
+
+        guard let previousText else {
+            finishScratchCommand(
+                scratched: false,
+                rawTranscript: rawTranscript,
+                context: context,
+                audioFileName: audioFileName
+            )
+            return
+        }
+
+        // Selecting and deleting synthesizes key events, so wait for the
+        // dictation shortcut to be fully released — the same discipline the
+        // paste path follows.
+        performAfterShortcutReleased { [weak self] in
+            guard let self else { return }
+            let scratched = self.contextService.selectTextImmediatelyBeforeCaret(matching: previousText)
+            if scratched {
+                self.pressDelete()
+                // Forget the deleted dictation so a second "scratch that"
+                // cannot select-and-delete unrelated text that happens to
+                // match it.
+                self.previousDictationInvalidatedAt = Date()
+            }
+            self.finishScratchCommand(
+                scratched: scratched,
+                rawTranscript: rawTranscript,
+                context: context,
+                audioFileName: audioFileName
+            )
+        }
+    }
+
+    private func finishScratchCommand(
+        scratched: Bool,
+        rawTranscript: String,
+        context: AppContext,
+        audioFileName: String?
+    ) {
+        let status = scratched ? "Scratched last dictation" : "Nothing to scratch"
+        lastPostProcessingStatus = status
+        recordPipelineHistoryEntry(
+            rawTranscript: rawTranscript,
+            postProcessedTranscript: "",
+            postProcessingPrompt: "",
+            systemPrompt: Self.resolvedSystemPrompt(customSystemPrompt),
+            context: context,
+            processingStatus: status,
+            intent: .dictation,
+            audioFileName: audioFileName
+        )
+        statusText = status
+        if scratched {
+            overlayManager.dismiss()
+        } else {
+            overlayManager.showError("Nothing to scratch")
+        }
+        scheduleReadyStatusReset(after: 3, matching: [status])
+    }
+
     /// Start streaming microphone audio into the on-device SpeechAnalyzer.
     /// PCM16 samples (24 kHz mono) are analyzed while the user is still
     /// speaking, so the transcript is essentially ready at stop time. Setup
@@ -3029,6 +3258,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             bundleIdentifier: frontmostApp?.bundleIdentifier,
             windowTitle: windowTitle,
             selectedText: nil,
+            textBeforeCaret: nil,
             currentActivity: "Could not refresh app context at stop time; using text-only post-processing."
         )
     }
@@ -3234,6 +3464,19 @@ final class AppState: ObservableObject, @unchecked Sendable {
         keyDown?.post(tap: .cgSessionEventTap)
 
         let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 36, keyDown: false)
+        keyUp?.post(tap: .cgSessionEventTap)
+    }
+
+    /// Synthesizes a Delete (backspace, kVK_Delete = 51) key press. With the
+    /// previous dictation selected via `selectTextImmediatelyBeforeCaret`, a
+    /// single Delete removes the whole selection.
+    private func pressDelete() {
+        let source = CGEventSource(stateID: .hidSystemState)
+
+        let keyDown = CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: true)
+        keyDown?.post(tap: .cgSessionEventTap)
+
+        let keyUp = CGEvent(keyboardEventSource: source, virtualKey: 51, keyDown: false)
         keyUp?.post(tap: .cgSessionEventTap)
     }
 
