@@ -15,6 +15,7 @@ struct AppContextServiceTests {
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
+        RawRevertEligibilityTests.run()
         print("MegaphoneTests passed")
     }
 
