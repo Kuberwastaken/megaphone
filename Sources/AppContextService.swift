@@ -14,6 +14,7 @@ struct AppContext {
     let bundleIdentifier: String?
     let windowTitle: String?
     let selectedText: String?
+    let textBeforeCaret: String?
     let currentActivity: String
 
     var contextSummary: String {
@@ -26,6 +27,11 @@ struct AppContext {
 /// the accessibility APIs. Megaphone is local-only; nothing here talks to a
 /// network.
 final class AppContextService {
+    /// How much text before the caret is captured as continuation context.
+    /// Enough to see the current sentence and the previous one; small enough
+    /// to stay cheap in the on-device model's prompt.
+    static let textBeforeCaretLimit = 240
+
     func collectSelectionSnapshot() -> AppSelectionSnapshot {
         guard let frontmostApp = NSWorkspace.shared.frontmostApplication else {
             return AppSelectionSnapshot(
@@ -100,6 +106,7 @@ final class AppContextService {
                 bundleIdentifier: nil,
                 windowTitle: nil,
                 selectedText: nil,
+                textBeforeCaret: nil,
                 currentActivity: "You are dictating in an unrecognized context."
             )
         }
@@ -115,6 +122,7 @@ final class AppContextService {
             bundleIdentifier: bundleIdentifier,
             windowTitle: windowTitle,
             selectedText: selectedText,
+            textBeforeCaret: textBeforeCaret(from: appElement),
             currentActivity: Self.localActivity(
                 appName: appName,
                 bundleIdentifier: bundleIdentifier,
@@ -140,6 +148,49 @@ final class AppContextService {
             ? " Nearby selected text is available as a tone and spelling hint."
             : ""
         return "The user is writing in \(activeApp), treated as \(writingContext.label).\(selectionHint)"
+    }
+
+    /// Captures up to `textBeforeCaretLimit` characters immediately before the
+    /// caret in the focused editable element, so smart cleanup can continue
+    /// existing text with matching capitalization and punctuation. Returns nil
+    /// when there is no focused text element, the element is a secure field
+    /// (never read passwords), the value is empty, or the caret sits at the
+    /// very start.
+    private func textBeforeCaret(from appElement: AXUIElement) -> String? {
+        guard let focusedElement = accessibilityElement(
+            from: appElement,
+            attribute: kAXFocusedUIElementAttribute as CFString
+        ) else { return nil }
+        // Secure fields report "AXSecureTextField" as the subrole (native
+        // AppKit) or occasionally as the role itself (some web views).
+        let secureMarker = NSAccessibility.Subrole.secureTextField.rawValue
+        let role = accessibilityRawString(from: focusedElement, attribute: kAXRoleAttribute as CFString)
+        let subrole = accessibilityRawString(from: focusedElement, attribute: kAXSubroleAttribute as CFString)
+        if role == secureMarker || subrole == secureMarker {
+            return nil
+        }
+        guard let value = accessibilityRawString(
+            from: focusedElement,
+            attribute: kAXValueAttribute as CFString
+        ), let selectedRange = accessibilityRange(
+            from: focusedElement,
+            attribute: kAXSelectedTextRangeAttribute as CFString
+        ) else { return nil }
+
+        // With an active selection, the text "before the caret" is the text
+        // before the selection start: dictation replaces the selection.
+        let valueNSString = value as NSString
+        var caret = min(max(selectedRange.location, 0), valueNSString.length)
+        guard caret > 0 else { return nil }
+        // Never split a surrogate pair or composed character sequence.
+        if caret < valueNSString.length {
+            let composed = valueNSString.rangeOfComposedCharacterSequence(at: caret)
+            caret = min(caret, composed.location)
+        }
+        guard caret > 0 else { return nil }
+
+        let captured = String(valueNSString.substring(to: caret).suffix(Self.textBeforeCaretLimit))
+        return captured.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : captured
     }
 
     private func focusedWindowTitle(from appElement: AXUIElement) -> String? {
