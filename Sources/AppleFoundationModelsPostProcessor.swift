@@ -59,14 +59,23 @@ enum AppWritingContext: String, Equatable, Sendable {
         let title = windowTitle?.lowercased() ?? ""
         let identity = "\(app) \(bundle)"
         let all = "\(identity) \(title)"
+        // An email address in a window title ("kuber@gmail.com - Google
+        // Account") must not read as webmail; only the service name counts.
+        let allWithoutAddresses = all.replacingOccurrences(
+            of: #"[a-z0-9._%+-]+@[a-z0-9.-]+"#,
+            with: " ",
+            options: .regularExpression
+        )
 
         if all.contains("slack") || all.contains("msteams") || all.contains("microsoft teams") {
             return .workChat
         }
-        if all.contains("discord") || bundle.contains("com.apple.mobilesms") || app == "messages" {
+        if all.contains("discord") || all.contains("whatsapp") || all.contains("telegram")
+            || bundle.contains("com.apple.mobilesms") || app == "messages" {
             return .casualChat
         }
-        if bundle.contains("com.apple.mail") || app == "mail" || all.contains("outlook") || all.contains("gmail") {
+        if bundle.contains("com.apple.mail") || app == "mail"
+            || allWithoutAddresses.contains("outlook") || allWithoutAddresses.contains("gmail") {
             return .email
         }
         let codeApps = [
