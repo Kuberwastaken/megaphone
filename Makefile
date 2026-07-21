@@ -104,14 +104,14 @@ endif
 test: $(TEST_RUNNER)
 	@$(TEST_RUNNER)
 
-$(TEST_RUNNER): Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/TransformStore.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/TransformStoreTests.swift Tests/WakePhraseMatcherTests.swift Sources/ScratchCommandMatcher.swift Tests/ScratchCommandMatcherTests.swift Sources/RawRevertEligibility.swift Tests/RawRevertEligibilityTests.swift
+$(TEST_RUNNER): Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/TransformStore.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/TransformStoreTests.swift Tests/WakePhraseMatcherTests.swift Sources/ScratchCommandMatcher.swift Tests/ScratchCommandMatcherTests.swift Sources/RawRevertEligibility.swift Tests/RawRevertEligibilityTests.swift Sources/ShortcutCore/ShortcutModels.swift Tests/ShortcutCancelBindingTests.swift
 	@mkdir -p "$(BUILD_DIR)"
 	swiftc \
 		-parse-as-library \
 		-o "$(TEST_RUNNER)" \
 		-sdk $(shell xcrun --show-sdk-path) \
 		-target $(ARCH)-apple-macosx26.0 \
-		Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/TransformStore.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/TransformStoreTests.swift Tests/WakePhraseMatcherTests.swift Sources/ScratchCommandMatcher.swift Tests/ScratchCommandMatcherTests.swift Sources/RawRevertEligibility.swift Tests/RawRevertEligibilityTests.swift
+		Sources/AppContextService.swift Sources/AppleFoundationModelsPostProcessor.swift Sources/DictionaryStore.swift Sources/TranscriptTidier.swift Sources/TransformStore.swift Sources/WakePhraseMatcher.swift Tests/AppContextServiceTests.swift Tests/DictionaryStoreTests.swift Tests/TranscriptTidierTests.swift Tests/TransformStoreTests.swift Tests/WakePhraseMatcherTests.swift Sources/ScratchCommandMatcher.swift Tests/ScratchCommandMatcherTests.swift Sources/RawRevertEligibility.swift Tests/RawRevertEligibilityTests.swift Sources/ShortcutCore/ShortcutModels.swift Tests/ShortcutCancelBindingTests.swift
 
 icon: $(ICON_ICNS)
 
