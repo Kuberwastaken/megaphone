@@ -2698,6 +2698,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
                             default:
                                 break
                             }
+                            if !trimmedFinalTranscript.isEmpty {
+                                DictionaryStore.shared.recordUsage(in: trimmedFinalTranscript)
+                            }
                         }
                         self.recordPipelineHistoryEntry(
                             rawTranscript: trimmedRawTranscript,
