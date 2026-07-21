@@ -74,12 +74,13 @@ enum TransformStore {
         }
     }
 
-    /// Lowercases, strips punctuation and symbols, and collapses whitespace
-    /// so spoken forms ("Polish that.") match stored names ("polish").
+    /// Lowercases, turns punctuation and symbols into word separators, and
+    /// collapses whitespace so spoken forms ("Polish that.", "meeting-notes")
+    /// match stored names ("polish", "Meeting Notes").
     static func normalize(_ text: String) -> String {
         text.lowercased()
             .components(separatedBy: CharacterSet.punctuationCharacters.union(.symbols))
-            .joined()
+            .joined(separator: " ")
             .split(whereSeparator: \.isWhitespace)
             .joined(separator: " ")
     }
