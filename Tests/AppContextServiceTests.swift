@@ -12,9 +12,12 @@ struct AppContextServiceTests {
         testMarkdownSurfaceDetection()
         testCleanupPromptUsesLocalAppStyle()
         testSelectionPromptUsesDestinationContext()
+        testTransformInstructionsAndPrompt()
+        testTransformSourceTextEchoIsRemoved()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
+        TransformStoreTests.run()
         print("MegaphoneTests passed")
     }
 
@@ -261,6 +264,39 @@ struct AppContextServiceTests {
         let legacy = AppleFoundationModelsPostProcessor.parseWakeCommandOutput("ordinary output")
         expect(!legacy.replacesPreviousText, "Unrouted output must fail safe as an insertion")
         expectEqual(legacy.text, "ordinary output")
+    }
+
+    private static func testTransformInstructionsAndPrompt() {
+        let instructions = AppleFoundationModelsPostProcessor.transformInstructions(
+            directive: TransformStore.polishInstruction
+        )
+        expect(instructions.contains("Rewrite the user's text according to the directive."), "Transform frame missing")
+        expect(instructions.contains("Return only the rewritten text"), "Output-only constraint missing")
+        expect(instructions.contains("Directive: Tighten the grammar"), "Directive was not embedded in the instructions")
+
+        let prompt = AppleFoundationModelsPostProcessor.transformPrompt(
+            text: "so basically we should ship on friday",
+            vocabulary: ["Megaphone"]
+        )
+        expect(prompt.contains("<source_text>"), "Tagged source block missing")
+        expect(prompt.contains("so basically we should ship on friday"), "Source text missing from prompt")
+        expect(prompt.contains("Preferred spellings: Megaphone"), "Vocabulary hint missing")
+
+        let bare = AppleFoundationModelsPostProcessor.transformPrompt(text: "hello", vocabulary: [])
+        expect(!bare.contains("Preferred spellings"), "Empty vocabulary must not add a hint")
+    }
+
+    private static func testTransformSourceTextEchoIsRemoved() {
+        let echoed = """
+        <source_text>
+        so basically we should ship on friday
+        </source_text>
+        We should ship on Friday.
+        """
+        expectEqual(
+            AppleFoundationModelsPostProcessor.normalizeCommandOutput(echoed),
+            "We should ship on Friday."
+        )
     }
 
     private static func expectEqual(_ actual: String?, _ expected: String, file: StaticString = #file, line: UInt = #line) {
