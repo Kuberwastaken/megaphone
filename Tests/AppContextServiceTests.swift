@@ -12,6 +12,9 @@ struct AppContextServiceTests {
         testMarkdownSurfaceDetection()
         testCleanupPromptUsesLocalAppStyle()
         testSelectionPromptUsesDestinationContext()
+        testWritingFormalityGuidance()
+        testWritingFormalityPromptPlumbing()
+        testWritingFormalityStorageRoundTrip()
         TranscriptTidierTests.run()
         DictionaryStoreTests.run()
         WakePhraseMatcherTests.run()
@@ -225,6 +228,128 @@ struct AppContextServiceTests {
         expect(prompt.contains("Window: Draft — Launch"), "Edit prompt lost window context")
         expect(prompt.contains("Writing context: email"), "Edit prompt lost email style")
         expect(prompt.contains("Do not invent a greeting, sign-off, subject, or details."), "Edit prompt lost email safety")
+    }
+
+    private static let casualSentence = "The speaker prefers a relaxed register: contractions are welcome and punctuation stays light."
+    private static let formalSentence = "The speaker prefers a polished register: full sentences, professional punctuation, and spoken shorthand written out — “gonna” becomes “going to”, “wanna” becomes “want to”."
+
+    private static func testWritingFormalityGuidance() {
+        let dialContexts: [AppWritingContext] = [.email, .workChat, .casualChat, .document, .neutral]
+        for context in dialContexts {
+            expectEqual(
+                context.cleanupGuidance(markdown: false, formality: .balanced),
+                context.cleanupGuidance(markdown: false)
+            )
+            expect(
+                !context.cleanupGuidance(markdown: false).contains("register"),
+                "Balanced must add nothing for \(context)"
+            )
+            expect(
+                context.cleanupGuidance(markdown: false, formality: .casual).hasSuffix(casualSentence),
+                "Casual preference missing for \(context)"
+            )
+            expect(
+                context.cleanupGuidance(markdown: false, formality: .formal).hasSuffix(formalSentence),
+                "Formal preference missing for \(context)"
+            )
+            expect(
+                context.commandGuidance(markdown: false, formality: .formal).contains(formalSentence),
+                "Command guidance lost formal preference for \(context)"
+            )
+        }
+
+        // Markdown guidance and the formality preference must coexist.
+        let markdownFormal = AppWritingContext.document.cleanupGuidance(markdown: true, formality: .formal)
+        expect(markdownFormal.contains("Markdown renders here"), "Markdown guidance lost with formality set")
+        expect(markdownFormal.hasSuffix(formalSentence), "Formal preference lost on markdown surface")
+
+        // Code and terminal are always technical, whatever the dial says.
+        for formality in WritingFormality.allCases {
+            expectEqual(
+                AppWritingContext.codeOrTerminal.cleanupGuidance(markdown: false, formality: formality),
+                AppWritingContext.codeOrTerminal.cleanupGuidance(markdown: false)
+            )
+        }
+    }
+
+    private static func testWritingFormalityPromptPlumbing() {
+        func request(_ formality: WritingFormality) -> SmartCleanupRequest {
+            SmartCleanupRequest(
+                transcript: "hey uh can you send me the report by friday thanks",
+                appName: "Mail",
+                bundleIdentifier: "com.apple.mail",
+                windowTitle: "Draft",
+                selectedText: nil,
+                contextSummary: "",
+                vocabulary: [],
+                corrections: [],
+                outputLanguage: "",
+                customInstructions: "",
+                formality: formality
+            )
+        }
+        expect(
+            AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.formal)).contains(formalSentence),
+            "Cleanup prompt lost the formal dial"
+        )
+        expect(
+            AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.casual)).contains(casualSentence),
+            "Cleanup prompt lost the casual dial"
+        )
+        let balancedPrompt = AppleFoundationModelsPostProcessor.cleanupPrompt(for: request(.balanced))
+        expect(
+            !balancedPrompt.contains(formalSentence) && !balancedPrompt.contains(casualSentence),
+            "Balanced cleanup prompt must match current behavior"
+        )
+
+        let commandPrompt = AppleFoundationModelsPostProcessor.commandPrompt(
+            command: "reply saying thanks",
+            appName: "Slack",
+            bundleIdentifier: "com.tinyspeck.slackmacgap",
+            windowTitle: "Megaphone | project",
+            contextSummary: "",
+            selectedText: nil,
+            previousText: nil,
+            vocabulary: [],
+            formality: .formal
+        )
+        expect(commandPrompt.contains(formalSentence), "Command prompt lost the formal dial")
+
+        let selectionPrompt = AppleFoundationModelsPostProcessor.selectionPrompt(
+            selectedText: "can we ship this tomorrow",
+            command: "fix the punctuation",
+            appName: "Discord",
+            bundleIdentifier: "com.hnc.Discord",
+            windowTitle: nil,
+            vocabulary: [],
+            formality: .casual
+        )
+        expect(selectionPrompt.contains(casualSentence), "Selection prompt lost the casual dial")
+    }
+
+    private static func testWritingFormalityStorageRoundTrip() {
+        for formality in WritingFormality.allCases {
+            expect(
+                WritingFormality(rawValue: formality.rawValue) == formality,
+                "Raw-value round trip failed for \(formality)"
+            )
+        }
+        // Unknown or missing stored values fall back to balanced, the way
+        // AppState resolves the per-context dictionary.
+        expect(
+            WritingFormality(rawValue: "loud") == nil,
+            "Unknown stored value must be rejected so the caller defaults to balanced"
+        )
+        let stored = ["email": "formal", "casualChat": "casual"]
+        let decoded = AppWritingContext.email.rawValue
+        expect(
+            WritingFormality(rawValue: stored[decoded] ?? "") == .formal,
+            "Stored dictionary lookup by context raw value failed"
+        )
+        expect(
+            WritingFormality(rawValue: stored[AppWritingContext.neutral.rawValue] ?? "") == nil,
+            "Missing context entry must resolve to no explicit formality"
+        )
     }
 
     private static func testWakeCommandResponseWrappersAreRemoved() {
