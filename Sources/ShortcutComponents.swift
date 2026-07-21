@@ -161,6 +161,95 @@ private struct ShortcutPresetRow: View {
     }
 }
 
+/// Shows the bound mouse dictation button and lets the user rebind it by
+/// pressing the desired button while capture is armed. Capture uses a local
+/// NSEvent monitor (the press must land on a window of this app), and the
+/// global tap is suspended meanwhile so the currently bound button cannot
+/// start dictation mid-capture.
+struct MouseDictationButtonRow: View {
+    @EnvironmentObject var appState: AppState
+
+    @State private var isCapturing = false
+    @State private var captureMonitor: Any?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 10) {
+                HStack(alignment: .center, spacing: 10) {
+                    Image(systemName: "computermouse")
+                        .foregroundStyle(isCapturing ? .blue : .secondary)
+
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(MouseDictationButton.displayName(for: appState.mouseDictationButton))
+                            .font(.system(.body, design: .monospaced).weight(.semibold))
+                            .foregroundStyle(.primary)
+                        Text(isCapturing ? "Waiting for a mouse button…" : "Hold this button to dictate.")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+
+                    Spacer()
+                }
+                .padding(12)
+                .background(isCapturing ? Color.blue.opacity(0.1) : Color(nsColor: .controlBackgroundColor))
+                .cornerRadius(8)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(isCapturing ? Color.blue : Color.clear, lineWidth: 1.5)
+                )
+
+                Button(isCapturing ? "Cancel" : "Change…") {
+                    if isCapturing {
+                        cancelCapture()
+                    } else {
+                        startCapture()
+                    }
+                }
+                .buttonStyle(.bordered)
+            }
+
+            if isCapturing {
+                Label(
+                    "With the pointer over this window, press the mouse button you want. Middle and side buttons only — left and right clicks keep working normally.",
+                    systemImage: "computermouse"
+                )
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(.blue)
+            }
+        }
+        .onChange(of: appState.isMouseDictationEnabled) { _, enabled in
+            if !enabled {
+                cancelCapture()
+            }
+        }
+        .onDisappear {
+            cancelCapture()
+        }
+    }
+
+    private func startCapture() {
+        cancelCapture()
+        isCapturing = true
+        appState.suspendHotkeyMonitoringForShortcutCapture()
+        captureMonitor = NSEvent.addLocalMonitorForEvents(matching: .otherMouseDown) { event in
+            guard MouseDictationButton.isBindable(event.buttonNumber) else { return event }
+            appState.mouseDictationButton = event.buttonNumber
+            cancelCapture()
+            return nil
+        }
+    }
+
+    private func cancelCapture() {
+        if let monitor = captureMonitor {
+            NSEvent.removeMonitor(monitor)
+            captureMonitor = nil
+        }
+        guard isCapturing else { return }
+        isCapturing = false
+        appState.resumeHotkeyMonitoringAfterShortcutCapture()
+    }
+}
+
 private struct ShortcutCaptureRow: View {
     let savedBinding: ShortcutBinding?
     let isSelected: Bool
