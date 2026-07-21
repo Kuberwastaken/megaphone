@@ -220,9 +220,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let holdShortcutStorageKey = "hold_shortcut"
     private let toggleShortcutStorageKey = "toggle_shortcut"
     private let copyAgainShortcutStorageKey = "copy_again_shortcut"
+    private let cancelShortcutStorageKey = "cancel_shortcut"
     private let savedHoldCustomShortcutStorageKey = "saved_hold_custom_shortcut"
     private let savedToggleCustomShortcutStorageKey = "saved_toggle_custom_shortcut"
     private let savedCopyAgainCustomShortcutStorageKey = "saved_copy_again_custom_shortcut"
+    private let savedCancelCustomShortcutStorageKey = "saved_cancel_custom_shortcut"
     private let customVocabularyStorageKey = "custom_vocabulary"
     private let wordCorrectionsStorageKey = "word_corrections"
     private let smartCleanupModeStorageKey = "smart_cleanup_mode"
@@ -287,6 +289,13 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
+    @Published var cancelShortcut: ShortcutBinding {
+        didSet {
+            persistShortcut(cancelShortcut, key: cancelShortcutStorageKey)
+            restartHotkeyMonitoring()
+        }
+    }
+
     @Published private(set) var savedHoldCustomShortcut: ShortcutBinding? {
         didSet {
             persistOptionalShortcut(savedHoldCustomShortcut, key: savedHoldCustomShortcutStorageKey)
@@ -302,6 +311,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
     @Published private(set) var savedCopyAgainCustomShortcut: ShortcutBinding? {
         didSet {
             persistOptionalShortcut(savedCopyAgainCustomShortcut, key: savedCopyAgainCustomShortcutStorageKey)
+        }
+    }
+
+    @Published private(set) var savedCancelCustomShortcut: ShortcutBinding? {
+        didSet {
+            persistOptionalShortcut(savedCancelCustomShortcut, key: savedCancelCustomShortcutStorageKey)
         }
     }
 
@@ -605,7 +620,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let shortcuts = Self.loadShortcutConfiguration(
             holdKey: holdShortcutStorageKey,
             toggleKey: toggleShortcutStorageKey,
-            copyAgainKey: copyAgainShortcutStorageKey
+            copyAgainKey: copyAgainShortcutStorageKey,
+            cancelKey: cancelShortcutStorageKey
         )
         let savedHoldCustomShortcut = Self.loadSavedCustomShortcut(
             forKey: savedHoldCustomShortcutStorageKey,
@@ -618,6 +634,10 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let savedCopyAgainCustomShortcut = Self.loadSavedCustomShortcut(
             forKey: savedCopyAgainCustomShortcutStorageKey,
             fallback: shortcuts.copyAgain.isCustom ? shortcuts.copyAgain : nil
+        )
+        let savedCancelCustomShortcut = Self.loadSavedCustomShortcut(
+            forKey: savedCancelCustomShortcutStorageKey,
+            fallback: shortcuts.cancel != .defaultCancel ? shortcuts.cancel : nil
         )
         let customVocabulary = UserDefaults.standard.string(forKey: customVocabularyStorageKey) ?? ""
         let wordCorrections = UserDefaults.standard.string(forKey: wordCorrectionsStorageKey) ?? ""
@@ -703,9 +723,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.holdShortcut = shortcuts.hold
         self.toggleShortcut = shortcuts.toggle
         self.copyAgainShortcut = shortcuts.copyAgain
+        self.cancelShortcut = shortcuts.cancel
         self.savedHoldCustomShortcut = savedHoldCustomShortcut.binding
         self.savedToggleCustomShortcut = savedToggleCustomShortcut.binding
         self.savedCopyAgainCustomShortcut = savedCopyAgainCustomShortcut.binding
+        self.savedCancelCustomShortcut = savedCancelCustomShortcut.binding
         self.isCommandModeEnabled = isCommandModeEnabled
         self.commandModeStyle = commandModeStyle
         self.commandModeManualModifier = commandModeManualModifier
@@ -753,6 +775,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         if shortcuts.didUpdateCopyAgainStoredValue {
             persistShortcut(shortcuts.copyAgain, key: copyAgainShortcutStorageKey)
         }
+        if shortcuts.didUpdateCancelStoredValue {
+            persistShortcut(shortcuts.cancel, key: cancelShortcutStorageKey)
+        }
         if savedHoldCustomShortcut.didUpdateStoredValue {
             persistOptionalShortcut(savedHoldCustomShortcut.binding, key: savedHoldCustomShortcutStorageKey)
         }
@@ -761,6 +786,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
         if savedCopyAgainCustomShortcut.didUpdateStoredValue {
             persistOptionalShortcut(savedCopyAgainCustomShortcut.binding, key: savedCopyAgainCustomShortcutStorageKey)
+        }
+        if savedCancelCustomShortcut.didUpdateStoredValue {
+            persistOptionalShortcut(savedCancelCustomShortcut.binding, key: savedCancelCustomShortcutStorageKey)
         }
 
         overlayManager.onStopButtonPressed = { [weak self] in
@@ -814,9 +842,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let hold: ShortcutBinding
         let toggle: ShortcutBinding
         let copyAgain: ShortcutBinding
+        let cancel: ShortcutBinding
         let didUpdateHoldStoredValue: Bool
         let didUpdateToggleStoredValue: Bool
         let didUpdateCopyAgainStoredValue: Bool
+        let didUpdateCancelStoredValue: Bool
     }
 
     private struct StoredOptionalShortcut {
@@ -833,7 +863,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private static func loadShortcutConfiguration(
         holdKey: String,
         toggleKey: String,
-        copyAgainKey: String
+        copyAgainKey: String,
+        cancelKey: String
     ) -> StoredShortcutConfiguration {
         let legacyPreset = ShortcutPreset(
             rawValue: UserDefaults.standard.string(forKey: "hotkey_option") ?? ShortcutPreset.fnKey.rawValue
@@ -843,13 +874,18 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let storedHold = loadShortcut(forKey: holdKey)
         let storedToggle = loadShortcut(forKey: toggleKey)
         let storedCopyAgain = loadShortcut(forKey: copyAgainKey)
+        let storedCancel = loadShortcut(forKey: cancelKey)
+        let cancel = ShortcutBinding.sanitizedCancelBinding(storedCancel.binding)
         return StoredShortcutConfiguration(
             hold: storedHold.binding ?? hold,
             toggle: storedToggle.binding ?? toggle,
             copyAgain: storedCopyAgain.binding ?? .disabled,
+            cancel: cancel,
             didUpdateHoldStoredValue: storedHold.binding == nil || storedHold.didNormalize,
             didUpdateToggleStoredValue: storedToggle.binding == nil || storedToggle.didNormalize,
-            didUpdateCopyAgainStoredValue: storedCopyAgain.didNormalize
+            didUpdateCopyAgainStoredValue: storedCopyAgain.didNormalize,
+            didUpdateCancelStoredValue: storedCancel.didNormalize
+                || (storedCancel.binding != nil && cancel != storedCancel.binding)
         )
     }
 
@@ -1322,7 +1358,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     }
 
     var usesFnShortcut: Bool {
-        holdShortcut.usesFnKey || toggleShortcut.usesFnKey || copyAgainShortcut.usesFnKey
+        holdShortcut.usesFnKey || toggleShortcut.usesFnKey || copyAgainShortcut.usesFnKey || cancelShortcut.usesFnKey
     }
 
     var hasEnabledHoldShortcut: Bool {
@@ -1362,6 +1398,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return savedToggleCustomShortcut
         case .copyAgain:
             return savedCopyAgainCustomShortcut
+        case .cancel:
+            return savedCancelCustomShortcut
         }
     }
 
@@ -1409,10 +1447,27 @@ final class AppState: ObservableObject, @unchecked Sendable {
             }
         }
 
+        if role == .cancel {
+            guard binding.kind == .key else {
+                return "Cancel Dictation must use a regular key, optionally with modifiers."
+            }
+            if binding.conflicts(with: holdShortcut) {
+                return "Cancel Dictation cannot share a shortcut with Hold to Talk."
+            }
+            if binding.conflicts(with: toggleShortcut) {
+                return "Cancel Dictation cannot share a shortcut with Tap to Toggle."
+            }
+        }
+        if role != .cancel, role != .copyAgain, binding.conflicts(with: cancelShortcut) {
+            return "This shortcut is already used by Cancel Dictation."
+        }
         if role != .copyAgain, binding.conflicts(with: copyAgainShortcut) {
             return "This shortcut is already used by Paste Again."
         }
         if role == .copyAgain {
+            if binding.conflicts(with: cancelShortcut) {
+                return "Paste Again cannot share a shortcut with Cancel Dictation."
+            }
             if binding.conflicts(with: holdShortcut) {
                 return "Paste Again cannot share a shortcut with Hold to Talk."
             }
@@ -1441,6 +1496,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 savedCopyAgainCustomShortcut = binding
             }
             copyAgainShortcut = binding
+        case .cancel:
+            if binding != .defaultCancel {
+                savedCancelCustomShortcut = binding
+            }
+            cancelShortcut = binding
         }
 
         return nil
@@ -1508,8 +1568,8 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 self?.handleShortcutEvent(event)
             }
         }
-        hotkeyManager.onEscapeKeyPressed = { [weak self] in
-            self?.handleEscapeKeyPress() ?? false
+        hotkeyManager.onCancelKeyPressed = { [weak self] in
+            self?.handleCancelKeyPress() ?? false
         }
         restartHotkeyMonitoring()
     }
@@ -1518,7 +1578,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         shouldMonitorHotkeys = false
         hotkeyMonitoringErrorMessage = nil
         hotkeyManager.onShortcutEvent = nil
-        hotkeyManager.onEscapeKeyPressed = nil
+        hotkeyManager.onCancelKeyPressed = nil
         hotkeyManager.stop()
     }
 
@@ -1544,6 +1604,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
             hold: holdShortcut,
             toggle: toggleShortcut,
             copyAgain: copyAgainShortcut,
+            cancel: cancelShortcut,
             permittedAdditionalExactMatchModifiers: permittedAdditionalExactMatchModifiers
         )
     }
@@ -1595,7 +1656,11 @@ final class AppState: ObservableObject, @unchecked Sendable {
         }
     }
 
-    private func handleEscapeKeyPress() -> Bool {
+    /// Consumes the configured cancel key only while a session it can cancel
+    /// is active (transcribing, or a pending/active toggle dictation). In
+    /// every other situation this returns false and the key event passes
+    /// through to the frontmost app untouched.
+    private func handleCancelKeyPress() -> Bool {
         if isTranscribing {
             cancelTranscription()
             return true
