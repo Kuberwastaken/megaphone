@@ -10,6 +10,12 @@ This project uses semantic versioning for public releases. Use `MAJOR.MINOR.PATC
 - `MINOR` changes add user-visible features and improvements.
 - `PATCH` changes fix bugs, polish existing behavior, or make small internal improvements.
 
+## [1.1.8] - 2026-07-23
+
+### Added
+
+- Import and Export buttons in Dictionary settings: save your private Dictionary — words, stars, suggestions, and Exact Corrections — to a simple JSON file and bring it to another Mac. Imports merge with what's already saved and never remove anything, so you don't re-teach your names and jargon machine by machine. No account, no cloud: syncing stays a file you control. (Thanks to Gal Dayan for the suggestion.)
+
 ## [1.1.7] - 2026-07-21
 
 ### Added
