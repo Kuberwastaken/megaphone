@@ -86,6 +86,54 @@ enum DictionaryStoreError: LocalizedError, Equatable {
     }
 }
 
+/// Portable snapshot of the private Dictionary written by Export and read by
+/// Import in Settings, so a second Mac can be taught from a file instead of
+/// from scratch — no account or server involved. Dates are ISO-8601 so the
+/// file stays human-readable and editable.
+struct DictionaryExportDocument: Codable {
+    static let currentVersion = 1
+
+    var megaphoneDictionaryVersion: Int
+    var exportedAt: Date
+    var entries: [DictionaryEntry]
+    var exactCorrections: String
+
+    init(entries: [DictionaryEntry], exactCorrections: String, exportedAt: Date = Date()) {
+        self.megaphoneDictionaryVersion = Self.currentVersion
+        self.exportedAt = exportedAt
+        self.entries = entries
+        self.exactCorrections = exactCorrections
+    }
+
+    /// Only the version key and entries are required, so a hand-trimmed file
+    /// (for example one with corrections removed) still imports.
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        megaphoneDictionaryVersion = try container.decode(Int.self, forKey: .megaphoneDictionaryVersion)
+        exportedAt = try container.decodeIfPresent(Date.self, forKey: .exportedAt) ?? Date()
+        entries = try container.decodeIfPresent([DictionaryEntry].self, forKey: .entries) ?? []
+        exactCorrections = try container.decodeIfPresent(String.self, forKey: .exactCorrections) ?? ""
+    }
+
+    func encoded() throws -> Data {
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        encoder.dateEncodingStrategy = .iso8601
+        return try encoder.encode(self)
+    }
+
+    static func decode(_ data: Data) throws -> DictionaryExportDocument {
+        let decoder = JSONDecoder()
+        decoder.dateDecodingStrategy = .iso8601
+        return try decoder.decode(DictionaryExportDocument.self, from: data)
+    }
+}
+
+struct DictionaryImportResult: Equatable {
+    var addedCount = 0
+    var updatedCount = 0
+}
+
 /// Local, privacy-preserving vocabulary used by speech recognition and cleanup.
 /// Learned entries remain suggestions until independently observed several times.
 final class DictionaryStore: ObservableObject {
@@ -286,6 +334,95 @@ final class DictionaryStore: ObservableObject {
             }
         }
         persist()
+    }
+
+    func exportDocument(exactCorrections: String, exportedAt: Date = Date()) -> DictionaryExportDocument {
+        DictionaryExportDocument(entries: entries, exactCorrections: exactCorrections, exportedAt: exportedAt)
+    }
+
+    /// Merges entries from an exported Dictionary file; nothing local is ever
+    /// removed. Terms match case- and diacritic-insensitively. An imported
+    /// active entry re-activates a local suggestion or rejection (the other
+    /// machine's explicit teaching wins), while an imported suggestion never
+    /// overrides a local rejection. Counters keep the larger value so ranking
+    /// survives the move. Learned additions respect the usual limits.
+    @discardableResult
+    func importEntries(_ imported: [DictionaryEntry], at date: Date = Date()) -> DictionaryImportResult {
+        var result = DictionaryImportResult()
+        var didChange = false
+        for entry in imported {
+            let term = Self.cleaned(entry.term)
+            guard !term.isEmpty else { continue }
+            if let index = index(of: term) {
+                let before = entries[index]
+                var local = before
+                if entry.status == .active && local.status != .active {
+                    local.status = .active
+                    local.isEnabled = entry.isEnabled
+                }
+                if entry.source == .manual { local.source = .manual }
+                local.starred = local.starred || entry.starred
+                local.observationCount = max(local.observationCount, entry.observationCount)
+                local.usageCount = max(local.usageCount, entry.usageCount)
+                guard local != before else { continue }
+                if local.status != before.status || local.source != before.source
+                    || local.starred != before.starred || local.isEnabled != before.isEnabled {
+                    result.updatedCount += 1
+                }
+                local.updatedAt = date
+                entries[index] = local
+                didChange = true
+            } else {
+                if entry.source == .learned && entry.status != .rejected {
+                    let learned = entries.filter { $0.source == .learned && $0.status != .rejected }
+                    guard learned.count < Self.learnedEntryLimit else { continue }
+                    if entry.status == .suggested,
+                       learned.filter({ $0.status == .suggested }).count >= Self.suggestionLimit {
+                        continue
+                    }
+                }
+                entries.append(DictionaryEntry(
+                    term: term,
+                    source: entry.source,
+                    status: entry.status,
+                    isEnabled: entry.isEnabled,
+                    observationCount: entry.observationCount,
+                    starred: entry.starred,
+                    usageCount: entry.usageCount,
+                    createdAt: entry.createdAt,
+                    updatedAt: date
+                ))
+                // Imported rejections still suppress future suggestions, but
+                // they are invisible in the UI, so don't count them as added.
+                if entry.status != .rejected { result.addedCount += 1 }
+                didChange = true
+            }
+        }
+        if didChange { persist() }
+        return result
+    }
+
+    /// Appends imported "heard → wanted" correction lines that aren't already
+    /// present locally (compared case-insensitively), preserving local order
+    /// and leaving local lines untouched.
+    static func mergedCorrections(local: String, imported: String) -> (text: String, addedCount: Int) {
+        func normalized(_ line: String) -> String {
+            line.trimmingCharacters(in: .whitespaces).lowercased()
+        }
+        var seen = Set(local.components(separatedBy: "\n").map(normalized).filter { !$0.isEmpty })
+        var appended: [String] = []
+        for line in imported.components(separatedBy: "\n") {
+            let key = normalized(line)
+            guard !key.isEmpty, !seen.contains(key) else { continue }
+            seen.insert(key)
+            appended.append(line.trimmingCharacters(in: .whitespaces))
+        }
+        guard !appended.isEmpty else { return (local, 0) }
+        let trimmedLocal = local.trimmingCharacters(in: .whitespacesAndNewlines)
+        let text = trimmedLocal.isEmpty
+            ? appended.joined(separator: "\n")
+            : trimmedLocal + "\n" + appended.joined(separator: "\n")
+        return (text, appended.count)
     }
 
     private func migrateLegacyVocabularyIfNeeded() {

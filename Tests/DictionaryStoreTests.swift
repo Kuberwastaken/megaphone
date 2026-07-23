@@ -15,6 +15,10 @@ enum DictionaryStoreTests {
         testUsageMatchingRespectsWordBoundaries()
         testUsageIncrementsOnlyEnabledEntries()
         testStarAndUsagePersist()
+        testExportDocumentRoundTrip()
+        testImportMergesByTerm()
+        testImportPersists()
+        testMergedCorrections()
     }
 
     private static func testManualTermsAndProjection() {
@@ -212,6 +216,100 @@ enum DictionaryStoreTests {
         expectEqual(reloaded.entries.first?.starred, true)
         expectEqual(reloaded.entries.first?.usageCount, 1)
         defaults.removePersistentDomain(forName: suite)
+    }
+
+    private static func testExportDocumentRoundTrip() {
+        let (store, defaults) = makeStore()
+        defer { clear(defaults) }
+
+        let starred = try! store.addManual("Megaphone")
+        store.setStarred(true, for: starred.id)
+        store.observe(candidateTerms: ["Kuber"])
+
+        let document = store.exportDocument(exactCorrections: "mega phone → Megaphone")
+        let decoded = try! DictionaryExportDocument.decode(try! document.encoded())
+
+        expectEqual(decoded.megaphoneDictionaryVersion, DictionaryExportDocument.currentVersion)
+        expectEqual(decoded.exactCorrections, "mega phone → Megaphone")
+        // ISO-8601 drops sub-second precision, so compare everything but dates.
+        expectEqual(decoded.entries.map(\.term), store.entries.map(\.term))
+        expectEqual(decoded.entries.map(\.source), store.entries.map(\.source))
+        expectEqual(decoded.entries.map(\.status), store.entries.map(\.status))
+        expectEqual(decoded.entries.map(\.starred), store.entries.map(\.starred))
+        expectEqual(decoded.entries.map(\.isEnabled), store.entries.map(\.isEnabled))
+        expectEqual(decoded.entries.map(\.observationCount), store.entries.map(\.observationCount))
+    }
+
+    private static func testImportMergesByTerm() {
+        let (store, defaults) = makeStore()
+        defer { clear(defaults) }
+
+        _ = try! store.addManual("Megaphone")
+        store.observe(candidateTerms: ["Kuber"]) // local suggestion
+        store.observe(candidateTerms: ["Cursor"])
+        store.dismissSuggestion(id: store.entries.first { $0.term == "Cursor" }!.id)
+        store.observe(candidateTerms: ["Claurst"])
+        store.dismissSuggestion(id: store.entries.first { $0.term == "Claurst" }!.id)
+
+        let imported = [
+            // Duplicate of a local active entry: stars and usage merge in.
+            DictionaryEntry(term: "megaphone", source: .manual, status: .active, starred: true, usageCount: 9),
+            // Explicitly taught on the other Mac: activates the local suggestion.
+            DictionaryEntry(term: "Kuber", source: .manual, status: .active),
+            // A mere suggestion elsewhere must not resurrect a local rejection.
+            DictionaryEntry(term: "Cursor", source: .learned, status: .suggested),
+            // But an explicit activation elsewhere wins over a local rejection.
+            DictionaryEntry(term: "claurst", source: .manual, status: .active),
+            // Brand new term.
+            DictionaryEntry(term: "SpeechAnalyzer", source: .manual, status: .active),
+            DictionaryEntry(term: "   ", source: .manual, status: .active)
+        ]
+        let result = store.importEntries(imported)
+
+        expectEqual(result.addedCount, 1)
+        expectEqual(result.updatedCount, 3)
+        let megaphone = store.entries.first { $0.term == "Megaphone" }!
+        expectEqual(megaphone.starred, true)
+        expectEqual(megaphone.usageCount, 9)
+        expectEqual(store.entries.first { $0.term == "Kuber" }?.status, .active)
+        expectEqual(store.entries.first { $0.term == "Cursor" }?.status, .rejected)
+        let claurst = store.entries.first { $0.term == "Claurst" }!
+        expectEqual(claurst.status, .active)
+        expectEqual(claurst.source, .manual)
+        expect(claurst.isEnabled, "Reactivated entry should be enabled")
+        expectEqual(store.entries.first { $0.term == "SpeechAnalyzer" }?.status, .active)
+        expectEqual(store.entries.count, 5)
+    }
+
+    private static func testImportPersists() {
+        let suite = "DictionaryStoreTests.\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        let store = DictionaryStore(defaults: defaults, storageKey: "entries", migrationKey: "migrated")
+        store.importEntries([
+            DictionaryEntry(term: "Obsidian", source: .manual, status: .active, starred: true, usageCount: 4)
+        ])
+        let reloaded = DictionaryStore(defaults: defaults, storageKey: "entries", migrationKey: "migrated")
+        expectEqual(reloaded.activeTerms, ["Obsidian"])
+        expectEqual(reloaded.entries.first?.starred, true)
+        expectEqual(reloaded.entries.first?.usageCount, 4)
+        defaults.removePersistentDomain(forName: suite)
+    }
+
+    private static func testMergedCorrections() {
+        let merged = DictionaryStore.mergedCorrections(
+            local: "mega phone → Megaphone\n",
+            imported: "MEGA PHONE → Megaphone\nkuber → Kuber\n\nkuber → Kuber"
+        )
+        expectEqual(merged.text, "mega phone → Megaphone\nkuber → Kuber")
+        expectEqual(merged.addedCount, 1)
+
+        let fromEmpty = DictionaryStore.mergedCorrections(local: "", imported: "a → b")
+        expectEqual(fromEmpty.text, "a → b")
+        expectEqual(fromEmpty.addedCount, 1)
+
+        let nothingNew = DictionaryStore.mergedCorrections(local: "a → b", imported: "a → b\n")
+        expectEqual(nothingNew.text, "a → b")
+        expectEqual(nothingNew.addedCount, 0)
     }
 
     private static func makeStore() -> (DictionaryStore, UserDefaults) {
