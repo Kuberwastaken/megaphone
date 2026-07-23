@@ -2,6 +2,7 @@ import SwiftUI
 import AVFoundation
 import ServiceManagement
 import FoundationModels
+import UniformTypeIdentifiers
 
 // MARK: - Shared Helpers
 
@@ -1269,6 +1270,7 @@ struct DictionarySettingsView: View {
     @State private var newTerm = ""
     @State private var searchText = ""
     @State private var addError: String?
+    @State private var transferStatus: String?
     @FocusState private var newTermFocused: Bool
 
     private var suggestions: [DictionaryEntry] {
@@ -1304,6 +1306,29 @@ struct DictionarySettingsView: View {
                                 .font(.caption)
                                 .foregroundStyle(.red)
                         }
+
+                        Divider()
+
+                        HStack(spacing: 8) {
+                            Button { importDictionary() } label: {
+                                Label("Import…", systemImage: "square.and.arrow.down")
+                            }
+                            Button { exportDictionary() } label: {
+                                Label("Export…", systemImage: "square.and.arrow.up")
+                            }
+                            .disabled(store.entries.isEmpty)
+                            Spacer()
+                            if let transferStatus {
+                                Text(transferStatus)
+                                    .font(.caption)
+                                    .foregroundStyle(.secondary)
+                            }
+                        }
+                        .controlSize(.small)
+
+                        Text("Using more than one Mac? Export saves your Dictionary — words, stars, suggestions, and Exact Corrections — to a file you can import on the other machine. Imports merge with what's already saved; nothing is removed.")
+                            .font(.caption2)
+                            .foregroundStyle(.tertiary)
                     }
                 }
 
@@ -1447,6 +1472,65 @@ struct DictionarySettingsView: View {
         } catch {
             addError = error.localizedDescription
         }
+    }
+
+    private func exportDictionary() {
+        let panel = NSSavePanel()
+        panel.allowedContentTypes = [.json]
+        panel.nameFieldStringValue = "Megaphone Dictionary.json"
+        panel.title = "Export Dictionary"
+        panel.message = "Choose where to save your Dictionary."
+        panel.begin { response in
+            guard response == .OK, let destination = panel.url else { return }
+            do {
+                let document = store.exportDocument(exactCorrections: appState.wordCorrections)
+                try document.encoded().write(to: destination)
+                let count = document.entries.filter { $0.status != .rejected }.count
+                transferStatus = "Exported \(count) word\(count == 1 ? "" : "s")."
+            } catch {
+                presentTransferError("Export Failed", error.localizedDescription)
+            }
+        }
+    }
+
+    private func importDictionary() {
+        let panel = NSOpenPanel()
+        panel.allowedContentTypes = [.json]
+        panel.allowsMultipleSelection = false
+        panel.title = "Import Dictionary"
+        panel.message = "Choose a Dictionary file exported from Megaphone."
+        panel.begin { response in
+            guard response == .OK, let url = panel.urls.first else { return }
+            do {
+                let document = try DictionaryExportDocument.decode(Data(contentsOf: url))
+                let result = store.importEntries(document.entries)
+                let corrections = DictionaryStore.mergedCorrections(
+                    local: appState.wordCorrections,
+                    imported: document.exactCorrections
+                )
+                if corrections.addedCount > 0 {
+                    appState.wordCorrections = corrections.text
+                }
+                var parts = ["\(result.addedCount) new word\(result.addedCount == 1 ? "" : "s")"]
+                if result.updatedCount > 0 { parts.append("\(result.updatedCount) updated") }
+                if corrections.addedCount > 0 {
+                    parts.append("\(corrections.addedCount) correction\(corrections.addedCount == 1 ? "" : "s")")
+                }
+                transferStatus = "Imported \(parts.joined(separator: ", "))."
+            } catch {
+                presentTransferError(
+                    "Import Failed",
+                    "That file doesn't look like a Megaphone Dictionary export."
+                )
+            }
+        }
+    }
+
+    private func presentTransferError(_ title: String, _ message: String) {
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = message
+        alert.runModal()
     }
 
     private func matchesSearch(_ entry: DictionaryEntry) -> Bool {
