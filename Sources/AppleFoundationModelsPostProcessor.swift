@@ -595,7 +595,8 @@ actor AppleFoundationModelsPostProcessor {
     /// (e.g. "wrap this in a div") is never stripped.
     private static let wrapperTags = [
         "response", "result", "output", "answer", "reply", "message",
-        "bulleted_list", "numbered_list", "list", "rewritten_text"
+        "bulleted_list", "numbered_list", "list", "rewritten_text",
+        "cleaned_text", "clean_text"
     ]
     /// Prompt sections the model sometimes replays before its actual answer.
     private static let echoedPromptTags = [
@@ -606,6 +607,12 @@ actor AppleFoundationModelsPostProcessor {
     static func normalizeCommandOutput(_ raw: String) -> String {
         var value = raw.trimmingCharacters(in: .whitespacesAndNewlines)
         let options: String.CompareOptions = [.regularExpression, .caseInsensitive]
+
+        // The small model sometimes returns its answer wrapped in a markdown
+        // code fence and/or a JSON object like {"cleaned_text": "…"} despite the
+        // instructions. Peel those structured wrappers before the tag loop so
+        // the text they contain — not the scaffolding — reaches the user.
+        value = Self.unwrapStructuredOutput(value)
 
         while !value.isEmpty {
             let before = value
@@ -638,6 +645,68 @@ actor AppleFoundationModelsPostProcessor {
                 .joined(separator: "\n")
         }
         return value
+    }
+
+    /// JSON keys the model uses when it wraps a plain answer in an object, e.g.
+    /// `{"cleaned_text": "…"}`. Ordered by preference for extraction.
+    private static let jsonTextKeys = [
+        "cleaned_text", "clean_text", "cleaned", "corrected_text",
+        "rewritten_text", "text", "output", "result", "response", "answer"
+    ]
+
+    /// Peels a single-purpose JSON object the model emits around its answer, so
+    /// `{"cleaned_text": "Hi."}` — bare or wrapped in a ```` ```json ```` fence —
+    /// collapses to `Hi.`. A code fence is removed *only* when it wraps such an
+    /// object, so a code block the user genuinely dictated survives untouched.
+    private static func unwrapStructuredOutput(_ input: String) -> String {
+        let value = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let unwrapped = Self.jsonTextValue(in: value) {
+            return unwrapped.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        let defenced = Self.stripCodeFence(value)
+        if defenced != value, let unwrapped = Self.jsonTextValue(in: defenced) {
+            return unwrapped.trimmingCharacters(in: .whitespacesAndNewlines)
+        }
+        return value
+    }
+
+    /// Removes a surrounding ```` ``` ```` fence (with optional language tag)
+    /// only when the whole string is one fenced block, so inline prose that
+    /// merely mentions backticks is untouched.
+    private static func stripCodeFence(_ text: String) -> String {
+        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("```") else { return trimmed }
+        var lines = trimmed.components(separatedBy: .newlines)
+        guard lines.count >= 2,
+              let opener = lines.first?.trimmingCharacters(in: .whitespaces),
+              opener.range(of: "^```[a-zA-Z0-9+#-]*$", options: .regularExpression) != nil,
+              lines.last?.trimmingCharacters(in: .whitespaces) == "```" else {
+            return trimmed
+        }
+        lines.removeFirst()
+        lines.removeLast()
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// Returns the wrapped text when `input` is a JSON object whose keys are all
+    /// known answer-wrapper keys. Requiring *every* key to be known leaves a
+    /// genuinely dictated object such as `{"name": "Ada"}` untouched.
+    private static func jsonTextValue(in input: String) -> String? {
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard trimmed.hasPrefix("{"), trimmed.hasSuffix("}"),
+              let data = trimmed.data(using: .utf8),
+              let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              !object.isEmpty else {
+            return nil
+        }
+        var lowered: [String: Any] = [:]
+        for (key, value) in object { lowered[key.lowercased()] = value }
+        let known = Set(Self.jsonTextKeys)
+        guard lowered.keys.allSatisfy({ known.contains($0) }) else { return nil }
+        for key in Self.jsonTextKeys {
+            if let value = lowered[key] as? String { return value }
+        }
+        return nil
     }
 
     private func makeSession(instructions: String) -> LanguageModelSession {
