@@ -905,7 +905,7 @@ actor AppleFoundationModelsPostProcessor {
         return !".!?…".contains(last)
     }
 
-    private static func validate(_ output: String, source: String, allowsExpansion: Bool = false) throws {
+    static func validate(_ output: String, source: String, allowsExpansion: Bool = false) throws {
         guard !output.isEmpty else { throw SmartCleanupError.emptyOutput }
         let lower = output.lowercased()
         let rejectedPrefixes = [
@@ -919,6 +919,48 @@ actor AppleFoundationModelsPostProcessor {
         if !allowsExpansion && output.count > max(sourceCount * 2, sourceCount + 200) {
             throw SmartCleanupError.invalidOutput("unexpectedly expanded the transcript")
         }
+        if !allowsExpansion && output.count * 2 < sourceCount {
+            throw SmartCleanupError.invalidOutput("dropped most of the transcript")
+        }
+        if !allowsExpansion {
+            let dropped = Self.words(source)
+                .intersection(Self.mustPreserveTerms)
+                .subtracting(Self.words(output))
+            if let word = dropped.sorted().first {
+                throw SmartCleanupError.invalidOutput("dropped the spoken word \"\(word)\"")
+            }
+        }
+        // Bullets and numbered lists are welcome, but the model also wraps plain prose in
+        // code fences, headings, or blockquotes, which is never what was dictated.
+        if !allowsExpansion {
+            let lowerSource = source.lowercased()
+            let askedForBlock = ["code block", "code fence", "heading", "quote", "markdown"]
+                .contains { lowerSource.contains($0) }
+            let trimmedOutput = output.trimmingCharacters(in: .whitespacesAndNewlines)
+            let trimmedSource = source.trimmingCharacters(in: .whitespacesAndNewlines)
+            if !askedForBlock {
+                let markers = ["```", "> ", "#"]
+                if let marker = markers.first(where: { trimmedOutput.hasPrefix($0) }),
+                   !trimmedSource.hasPrefix(marker) {
+                    throw SmartCleanupError.invalidOutput("wrapped the transcript in markdown")
+                }
+            }
+        }
+    }
+
+    /// Words the model must never silently delete. The system prompt already tells it to
+    /// preserve profanity, but the on-device model drops or paraphrases around these anyway;
+    /// this enforces that contract so the transcript falls back to basic cleanup instead.
+    private static let mustPreserveTerms: Set<String> = [
+        "fuck", "fucks", "fucked", "fucker", "fuckers", "fucking",
+        "shit", "shits", "shitty", "bullshit", "damn", "goddamn", "damned",
+        "ass", "asshole", "arse", "bitch", "bastard", "crap", "piss", "pissed",
+        "dick", "cock", "cunt", "prick", "twat", "wanker", "bollocks", "bugger",
+        "slut", "whore", "douche", "jackass", "dumbass", "motherfucker"
+    ]
+
+    private static func words(_ text: String) -> Set<String> {
+        Set(text.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init))
     }
 }
 
