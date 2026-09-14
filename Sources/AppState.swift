@@ -259,6 +259,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let dictationAudioInterruptionEnabledStorageKey = "dictation_audio_interruption_enabled"
     private let mouseDictationEnabledStorageKey = "mouse_dictation_enabled"
     private let mouseDictationButtonStorageKey = "mouse_dictation_button"
+    private let excludedAppsStorageKey = "excluded_apps"
     private let pasteAfterShortcutReleaseDelay: TimeInterval = 0.03
     private let pressEnterAfterPasteDelay: TimeInterval = 0.08
     private let clipboardRestoreDelay: TimeInterval = 1.0
@@ -330,6 +331,17 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             UserDefaults.standard.set(mouseDictationButton, forKey: mouseDictationButtonStorageKey)
             restartHotkeyMonitoring()
+        }
+    }
+
+    /// Apps that ignore Megaphone's dictation shortcuts entirely: while one of
+    /// them is frontmost nothing starts and the keys are never swallowed. The
+    /// shortcut gate reads this list live, so no hotkey restart is needed.
+    @Published private(set) var excludedApps: [ExcludedApp] {
+        didSet {
+            if let data = ExcludedAppList.encoded(excludedApps) {
+                UserDefaults.standard.set(data, forKey: excludedAppsStorageKey)
+            }
         }
     }
 
@@ -738,6 +750,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
             UserDefaults.standard.object(forKey: mouseDictationButtonStorageKey) as? Int
                 ?? MouseDictationButton.defaultButtonNumber
         )
+        let excludedApps = ExcludedAppList.decoded(
+            UserDefaults.standard.data(forKey: excludedAppsStorageKey)
+        )
         let preserveClipboard = UserDefaults.standard.object(forKey: preserveClipboardStorageKey) == nil
             ? true
             : UserDefaults.standard.bool(forKey: preserveClipboardStorageKey)
@@ -817,6 +832,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.commandModeManualModifier = commandModeManualModifier
         self.isMouseDictationEnabled = isMouseDictationEnabled
         self.mouseDictationButton = mouseDictationButton
+        self.excludedApps = excludedApps
         self.customVocabulary = customVocabulary
         self.wordCorrections = wordCorrections
         self.smartCleanupMode = smartCleanupMode
@@ -1651,6 +1667,37 @@ final class AppState: ObservableObject, @unchecked Sendable {
         return false
     }
 
+    // MARK: - Excluded Apps
+
+    /// Adds an app to the exclusion list. Returns false when the app is
+    /// already excluded or carries no usable bundle identifier.
+    @discardableResult
+    func excludeApp(bundleIdentifier: String?, name: String?) -> Bool {
+        guard let app = ExcludedApp(bundleIdentifier: bundleIdentifier, name: name) else {
+            return false
+        }
+        let updated = ExcludedAppList.inserting(app, into: excludedApps)
+        guard updated.count != excludedApps.count else { return false }
+        excludedApps = updated
+        return true
+    }
+
+    func removeExcludedApp(bundleIdentifier: String) {
+        excludedApps = ExcludedAppList.removing(bundleIdentifier: bundleIdentifier, from: excludedApps)
+    }
+
+    func isAppExcluded(bundleIdentifier: String?) -> Bool {
+        ExcludedAppList.contains(excludedApps, bundleIdentifier: bundleIdentifier)
+    }
+
+    /// The shortcut gate's question, answered at the moment a key arrives.
+    /// With no exclusions configured — the common case — this never touches
+    /// NSWorkspace at all.
+    private func frontmostAppIgnoresShortcuts() -> Bool {
+        guard !excludedApps.isEmpty else { return false }
+        return isAppExcluded(bundleIdentifier: NSWorkspace.shared.frontmostApplication?.bundleIdentifier)
+    }
+
     func startHotkeyMonitoring() {
         shouldMonitorHotkeys = true
         hotkeyManager.onShortcutEvent = { [weak self] event in
@@ -1664,6 +1711,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         hotkeyManager.onMouseButtonEvent = { [weak self] isDown in
             self?.handleMouseDictationButtonEvent(isDown: isDown) ?? false
         }
+        hotkeyManager.shouldIgnoreShortcuts = { [weak self] in
+            self?.frontmostAppIgnoresShortcuts() ?? false
+        }
         restartHotkeyMonitoring()
     }
 
@@ -1673,6 +1723,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         hotkeyManager.onShortcutEvent = nil
         hotkeyManager.onCancelKeyPressed = nil
         hotkeyManager.onMouseButtonEvent = nil
+        hotkeyManager.shouldIgnoreShortcuts = nil
         hotkeyManager.stop()
     }
 
