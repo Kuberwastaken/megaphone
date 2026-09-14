@@ -452,6 +452,9 @@ struct GeneralSettingsView: View {
                 SettingsCard("Dictation Shortcuts", icon: "keyboard.fill") {
                     hotkeySection
                 }
+                SettingsCard("Excluded Apps", icon: "nosign") {
+                    ExcludedAppsSettingsSection()
+                }
                 SettingsCard("Mouse Dictation", icon: "computermouse.fill") {
                     mouseDictationSection
                 }
