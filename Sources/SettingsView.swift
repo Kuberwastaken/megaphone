@@ -723,6 +723,18 @@ struct GeneralSettingsView: View {
                 .font(.caption)
                 .foregroundStyle(.secondary)
 
+            Picker("Pause Punctuation", selection: $appState.punctuationStyle) {
+                ForEach(TranscriptTidier.PunctuationStyle.allCases) { style in
+                    Text(style.title).tag(style)
+                }
+            }
+            .pickerStyle(.segmented)
+            .padding(.top, 4)
+
+            Text(punctuationStyleDescription)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
             if appState.smartCleanupMode == .smart {
                 Label("Uses Apple's on-device language model when available, with Basic cleanup as a fast fallback.", systemImage: "lock.shield")
                     .font(.caption)
@@ -755,7 +767,18 @@ struct GeneralSettingsView: View {
         case .basic:
             return "Instant deterministic cleanup for fillers, stutters, repeated words, and spacing."
         case .exact:
-            return "Preserves the words you spoke, with only the minimum formatting needed for insertion."
+            return "Preserves the words you spoke, applying only your exact corrections and pause punctuation setting."
+        }
+    }
+
+    private var punctuationStyleDescription: String {
+        switch appState.punctuationStyle {
+        case .standard:
+            return "Keeps the commas, ellipses, and sentence breaks the speech model adds when you pause."
+        case .noEllipses:
+            return "Removes the ellipses pauses produce. Commas are kept."
+        case .minimal:
+            return "Removes pause commas, ellipses, and sentence breaks that split a thought. Lists, numbers, and line-ending commas are kept."
         }
     }
 

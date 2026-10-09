@@ -228,6 +228,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
     private let customVocabularyStorageKey = "custom_vocabulary"
     private let wordCorrectionsStorageKey = "word_corrections"
     private let smartCleanupModeStorageKey = "smart_cleanup_mode"
+    private let punctuationStyleStorageKey = "punctuation_style"
     private let transcriptionLanguageStorageKey = "transcription_language"
     private let selectedMicrophoneStorageKey = "selected_microphone_id"
     private let customSystemPromptStorageKey = "custom_system_prompt"
@@ -390,6 +391,12 @@ final class AppState: ObservableObject, @unchecked Sendable {
         didSet {
             UserDefaults.standard.set(smartCleanupMode.rawValue, forKey: smartCleanupModeStorageKey)
             preserveExactWording = smartCleanupMode == .exact
+        }
+    }
+
+    @Published var punctuationStyle: TranscriptTidier.PunctuationStyle {
+        didSet {
+            UserDefaults.standard.set(punctuationStyle.rawValue, forKey: punctuationStyleStorageKey)
         }
     }
 
@@ -745,6 +752,9 @@ final class AppState: ObservableObject, @unchecked Sendable {
         let smartCleanupMode = SmartCleanupMode(
             rawValue: UserDefaults.standard.string(forKey: smartCleanupModeStorageKey) ?? ""
         ) ?? (preserveExactWording ? .exact : .smart)
+        let punctuationStyle = TranscriptTidier.PunctuationStyle(
+            rawValue: UserDefaults.standard.string(forKey: punctuationStyleStorageKey) ?? ""
+        ) ?? .standard
         let keepDictationInClipboardHistory = UserDefaults.standard.bool(forKey: keepDictationInClipboardHistoryStorageKey)
         let dictationAudioInterruptionEnabled = UserDefaults.standard.bool(
             forKey: dictationAudioInterruptionEnabledStorageKey
@@ -820,6 +830,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
         self.customVocabulary = customVocabulary
         self.wordCorrections = wordCorrections
         self.smartCleanupMode = smartCleanupMode
+        self.punctuationStyle = punctuationStyle
         self.transcriptionLanguage = transcriptionLanguage
         self.customSystemPrompt = customSystemPrompt
         self.customContextPrompt = customContextPrompt
@@ -2815,11 +2826,21 @@ final class AppState: ObservableObject, @unchecked Sendable {
             return (macro.payload, .voiceMacro(command: macro.command), "", nil)
         }
 
+        // Pause punctuation is stripped from the raw transcript so every mode,
+        // and the Smart model's input, starts without it.
+        let punctuationStyle = self.punctuationStyle
+        let restrainedTranscript = TranscriptTidier.restrainPunctuation(
+            trimmedRawTranscript,
+            style: punctuationStyle,
+            protectedTerms: vocabulary
+        )
+
         if cleanupMode == .exact {
-            return (trimmedRawTranscript, .preservedExactWording, "", nil)
+            let exact = TranscriptTidier.apply(corrections: corrections, to: restrainedTranscript)
+            return (exact, .preservedExactWording, "", nil)
         }
 
-        let deterministic = TranscriptTidier.tidy(trimmedRawTranscript, corrections: corrections)
+        let deterministic = TranscriptTidier.tidy(restrainedTranscript, corrections: corrections)
         let safeFallback = deterministic.isEmpty ? trimmedRawTranscript : deterministic
         if cleanupMode == .basic {
             return (safeFallback, .deterministicCleanup, "", nil)
@@ -2827,7 +2848,7 @@ final class AppState: ObservableObject, @unchecked Sendable {
 
         do {
             let request = SmartCleanupRequest(
-                transcript: trimmedRawTranscript,
+                transcript: restrainedTranscript,
                 appName: context.appName,
                 bundleIdentifier: context.bundleIdentifier,
                 windowTitle: context.windowTitle,
@@ -2842,14 +2863,23 @@ final class AppState: ObservableObject, @unchecked Sendable {
                 customInstructions: [customSystemPrompt, customContextPrompt]
                     .filter { !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
                     .joined(separator: "\n"),
-                formality: formality
+                formality: formality,
+                punctuationStyle: punctuationStyle
             )
             let result = try await AppleFoundationModelsPostProcessor.shared.cleanup(
                 request,
                 sessionID: smartSessionID,
                 timeout: trimmedRawTranscript.count > 500 ? 4 : 2.5
             )
-            return (result.text, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt, nil)
+            // The model treats corrections and punctuation preferences as
+            // hints; enforce both deterministically on what it returns.
+            let enforced = TranscriptTidier.restrainPunctuation(
+                TranscriptTidier.apply(corrections: corrections, to: result.text),
+                style: punctuationStyle,
+                adjustCase: false,
+                protectedTerms: vocabulary
+            )
+            return (enforced, .smartCleanupSucceeded(elapsed: result.elapsed), result.prompt, nil)
         } catch {
             os_log(.error, log: recordingLog, "On-device smart cleanup failed: %{public}@", error.localizedDescription)
             return (safeFallback, .smartCleanupFallback(reason: error.localizedDescription), "", nil)

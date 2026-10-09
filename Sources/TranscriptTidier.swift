@@ -1,4 +1,5 @@
 import Foundation
+import NaturalLanguage
 
 /// Fast, deterministic cleanup for literal speech transcripts.
 ///
@@ -90,9 +91,186 @@ struct TranscriptTidier {
             guard let mapping = ordered.first(where: {
                 $0.spoken.compare(normalizedHeard, options: [.caseInsensitive, .diacriticInsensitive]) == .orderedSame
             }) else { continue }
+            // Corrections are re-applied to Smart output that may already
+            // contain the replacement; "next -> Next.js" must not produce
+            // "Next.js.js" on the second pass.
+            let tail = result.substring(from: match.range.location)
+            if tail.hasPrefix(mapping.replacement) { continue }
             result.replaceCharacters(in: match.range, with: mapping.replacement)
         }
         return result as String
+    }
+
+    // MARK: - Pause punctuation
+
+    /// How much of the speech model's pause-driven punctuation to keep.
+    /// SpeechAnalyzer turns pauses into commas, ellipses, and premature
+    /// sentence breaks ("the meeting. To Thursday"); this dial strips them.
+    enum PunctuationStyle: String, CaseIterable, Identifiable {
+        case standard
+        case noEllipses
+        case minimal
+
+        var id: String { rawValue }
+
+        var title: String {
+            switch self {
+            case .standard: return "As recognised"
+            case .noEllipses: return "No ellipses"
+            case .minimal: return "Minimal"
+            }
+        }
+    }
+
+    /// Words that almost never begin a written sentence. A period followed by
+    /// one of these is a pause the speech model mistook for a sentence end.
+    private static let continuationWords: Set<String> = [
+        "and", "or", "nor", "because", "to", "is", "are", "was", "were", "of", "than",
+        "with", "which", "whereas", "unless", "until", "into", "onto", "from", "by"
+    ]
+
+    /// Removes pause punctuation according to `style`.
+    ///
+    /// - Parameter adjustCase: lowercase words the speech model capitalized
+    ///   only because they followed a pause mark. Disable for text that has
+    ///   already been through Smart cleanup, whose capitalization is trusted.
+    /// - Parameter protectedTerms: dictionary terms whose casing is never
+    ///   changed.
+    static func restrainPunctuation(
+        _ text: String,
+        style: PunctuationStyle,
+        adjustCase: Bool = true,
+        protectedTerms: [String] = []
+    ) -> String {
+        guard style != .standard, !text.isEmpty else { return text }
+        let protected = Set(protectedTerms.map { $0.lowercased() })
+        var result = removeEllipses(from: text, adjustCase: adjustCase, protected: protected)
+        if style == .minimal {
+            result = removePauseCommas(from: result, adjustCase: adjustCase, protected: protected)
+            result = joinFalseSentenceBreaks(in: result)
+        }
+        return result
+    }
+
+    /// "Then I will... Head over" -> "Then I will head over"; a trailing
+    /// ellipsis becomes a period. Numeric ranges like `0...5` and leading
+    /// spreads like `...args` are left alone.
+    private static func removeEllipses(from text: String, adjustCase: Bool, protected: Set<String>) -> String {
+        guard let regex = try? NSRegularExpression(
+            pattern: #"(?<![\d.])[ \t]*(?:\.{3,}|…)(?=\s|$|["”’)])[ \t]*"#
+        ) else { return text }
+        let result = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: result.length)).reversed() {
+            let before = result.substring(to: match.range.location)
+            let after = result.substring(from: match.range.location + match.range.length)
+            let atStart = before.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let atEnd = after.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            let afterStartsLine = after.first?.isNewline == true
+            let replacement: String
+            if atStart {
+                replacement = ""
+            } else if atEnd || afterStartsLine {
+                replacement = before.last.map { ".!?:;,".contains($0) } == true ? "" : "."
+            } else {
+                replacement = " "
+            }
+            result.replaceCharacters(in: match.range, with: replacement)
+            if replacement == " ", adjustCase {
+                lowercasePauseCapital(in: result, at: match.range.location + 1, protected: protected)
+            }
+        }
+        return result as String
+    }
+
+    /// Drops commas followed by a space, which is how SpeechAnalyzer marks a
+    /// pause. Digit grouping (`1,000`), line-ending commas ("Hi Sam,") and
+    /// genuine lists ("apples, oranges, and pears") are kept.
+    private static func removePauseCommas(from text: String, adjustCase: Bool, protected: Set<String>) -> String {
+        guard let segmentRegex = try? NSRegularExpression(pattern: #"[^.!?;:\n]+"#),
+              let commaRegex = try? NSRegularExpression(pattern: #",[ \t]+"#) else { return text }
+        let result = NSMutableString(string: text)
+        for segment in segmentRegex.matches(in: text, range: NSRange(location: 0, length: result.length)).reversed() {
+            let segmentText = result.substring(with: segment.range)
+            guard segmentText.contains(","), !looksLikeList(segmentText) else { continue }
+            for comma in commaRegex.matches(in: segmentText, range: NSRange(location: 0, length: (segmentText as NSString).length)).reversed() {
+                let location = segment.range.location + comma.range.location
+                result.replaceCharacters(in: NSRange(location: location, length: comma.range.length), with: " ")
+                if adjustCase {
+                    lowercasePauseCapital(in: result, at: location + 1, protected: protected)
+                }
+            }
+        }
+        return result as String
+    }
+
+    /// A list has at least three comma-separated items, short middle items,
+    /// and a final item introduced by "and" or "or".
+    private static func looksLikeList(_ segment: String) -> Bool {
+        let parts = segment.components(separatedBy: ",").map {
+            $0.split(whereSeparator: { $0.isWhitespace }).map { $0.lowercased() }
+        }
+        guard parts.count >= 3, let last = parts.last, let first = last.first,
+              first == "and" || first == "or" else { return false }
+        return parts.dropFirst().dropLast().allSatisfy { (1...4).contains($0.count) }
+    }
+
+    /// "the meeting. To Thursday" -> "the meeting to Thursday".
+    private static func joinFalseSentenceBreaks(in text: String) -> String {
+        guard let regex = try? NSRegularExpression(pattern: #"(?<=[\p{L}\p{N}])\.[ \t]+(\p{Lu}[\p{Ll}]*)(?![\p{L}\p{N}_'’.])"#) else {
+            return text
+        }
+        let result = NSMutableString(string: text)
+        for match in regex.matches(in: text, range: NSRange(location: 0, length: result.length)).reversed() {
+            let word = result.substring(with: match.range(at: 1))
+            guard continuationWords.contains(word.lowercased()) else { continue }
+            // "To start, run it." is a real sentence; "To Thursday" is not.
+            if word == "To", startsWithInfinitive(result.substring(from: match.range(at: 1).location)) { continue }
+            result.replaceCharacters(in: match.range, with: " " + word.lowercased())
+        }
+        return result as String
+    }
+
+    private static func startsWithInfinitive(_ sentence: String) -> Bool {
+        let sample = String(sentence.prefix(60))
+        let tagger = NLTagger(tagSchemes: [.lexicalClass])
+        tagger.string = sample
+        var classes: [NLTag] = []
+        tagger.enumerateTags(in: sample.startIndex..<sample.endIndex, unit: .word, scheme: .lexicalClass,
+                             options: [.omitWhitespace, .omitPunctuation]) { tag, _ in
+            if let tag { classes.append(tag) }
+            return classes.count < 2
+        }
+        return classes.count == 2 && classes[1] == .verb
+    }
+
+    /// Lowercases the word at `location` when the speech model capitalized it
+    /// only because it followed a pause. "I"-forms, acronyms, mixed-case
+    /// identifiers, dictionary terms, and recognisable names keep their case.
+    private static func lowercasePauseCapital(in text: NSMutableString, at location: Int, protected: Set<String>) {
+        guard location < text.length else { return }
+        let rest = text.substring(from: location)
+        guard let first = rest.first, first.isUppercase else { return }
+        let word = String(rest.prefix { $0.isLetter || $0 == "'" || $0 == "’" })
+        guard !word.isEmpty else { return }
+        let letters = word.filter(\.isLetter)
+        let base = word.split(whereSeparator: { $0 == "'" || $0 == "’" }).first.map(String.init) ?? word
+        if base == "I" { return }
+        if letters.count > 1, letters.dropFirst().contains(where: \.isUppercase) { return }
+        if protected.contains(word.lowercased()) || protected.contains(base.lowercased()) { return }
+        if isLikelyName(word, in: rest) { return }
+        text.replaceCharacters(
+            in: NSRange(location: location, length: (word as NSString).length),
+            with: word.prefix(1).lowercased() + word.dropFirst()
+        )
+    }
+
+    private static func isLikelyName(_ word: String, in context: String) -> Bool {
+        let tagger = NLTagger(tagSchemes: [.nameType])
+        let sample = "and " + context.prefix(80)
+        tagger.string = sample
+        let range = sample.range(of: word) ?? sample.startIndex..<sample.endIndex
+        let (tag, _) = tagger.tag(at: range.lowerBound, unit: .word, scheme: .nameType)
+        return tag == .personalName || tag == .placeName || tag == .organizationName
     }
 
     private static func removeFillers(from text: String) -> String {

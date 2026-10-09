@@ -41,6 +41,7 @@ struct SmartCleanupRequest: Sendable {
     let outputLanguage: String
     let customInstructions: String
     var formality: WritingFormality = .balanced
+    var punctuationStyle: TranscriptTidier.PunctuationStyle = .standard
 
     init(
         transcript: String,
@@ -54,7 +55,8 @@ struct SmartCleanupRequest: Sendable {
         corrections: [Correction],
         outputLanguage: String,
         customInstructions: String,
-        formality: WritingFormality = .balanced
+        formality: WritingFormality = .balanced,
+        punctuationStyle: TranscriptTidier.PunctuationStyle = .standard
     ) {
         self.transcript = transcript
         self.appName = appName
@@ -68,6 +70,7 @@ struct SmartCleanupRequest: Sendable {
         self.outputLanguage = outputLanguage
         self.customInstructions = customInstructions
         self.formality = formality
+        self.punctuationStyle = punctuationStyle
     }
 }
 
@@ -793,6 +796,14 @@ actor AppleFoundationModelsPostProcessor {
         }
         if !request.vocabulary.isEmpty {
             hints.append("Preferred spellings: " + request.vocabulary.prefix(40).joined(separator: ", "))
+        }
+        switch request.punctuationStyle {
+        case .standard:
+            break
+        case .noEllipses:
+            hints.append("Punctuation preference: never write ellipses (… or ...).")
+        case .minimal:
+            hints.append("Punctuation preference: minimal. Never add commas, ellipses, or sentence breaks where the speaker merely paused; use commas only for lists and to prevent genuine ambiguity.")
         }
         if !request.corrections.isEmpty {
             let mappings = request.corrections.prefix(40).map { "\($0.heard) -> \($0.written)" }
